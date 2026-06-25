@@ -1,0 +1,61 @@
+# Copy this file to `local.properties` and fill in the values below.
+# `local.properties` is git-ignored — never commit it.
+#
+# Full setup instructions: see BUILD.md (§7 Локальные secrets).
+
+# --- Android SDK path ---
+# Android Studio creates/updates this automatically when it opens the project.
+# If you build from CLI without Studio, set it manually.
+#
+#   macOS:    sdk.dir=/Users/<you>/Library/Android/sdk
+#   Linux:    sdk.dir=/home/<you>/Android/Sdk
+#   Windows:  sdk.dir=C\:\\Users\\<You>\\AppData\\Local\\Android\\Sdk
+#             (note: colon and backslashes must be escaped in .properties files)
+sdk.dir=/path/to/your/Android/sdk
+
+# --- Boomstream API key ---
+# Required for :example-app runtime + integration tests against the real API.
+# Get a key from a Boomstream Back Office admin.
+# Read in build.gradle.kts via Properties + injected as BuildConfig.BOOMSTREAM_API_KEY.
+#
+# Consumer app integration example (read from local.properties in your build.gradle.kts):
+#
+#   val localProps = Properties().also { it.load(rootProject.file("local.properties").inputStream()) }
+#   android {
+#       defaultConfig {
+#           buildConfigField("String", "BOOMSTREAM_API_KEY", "\"${localProps["BOOMSTREAM_API_KEY"]}\"")
+#       }
+#   }
+#
+# Then initialise the SDK:
+#   Boomstream.init(context, BuildConfig.BOOMSTREAM_API_KEY)
+BOOMSTREAM_API_KEY=your_api_key_here
+
+# --- Boomstream media-server key (optional) ---
+# Used as a suffix in the player User-Agent for HLS segment authentication.
+# Required only if your Boomstream account uses media-server key protection.
+# Leave blank if not applicable. Never commit the actual value.
+# BOOMSTREAM_MEDIA_KEY=your_media_key_here
+
+# --- AES playback key (optional) ---
+# Appended to the SDK User-Agent («Boomstream Android SDK v<version> <key>») when set.
+# The media server compares this key with the per-content AES key configured on the platform
+# to prepare the manifest in AES-encrypted mobile-playback mode.
+# Read in example-app/build.gradle.kts and injected as BuildConfig.ALLOWED_UA_KEY_TO_PLAY_AES.
+# Leave blank if your content does not use AES key protection.
+# Never commit the actual value — this file is the template only.
+# ALLOWED_UA_KEY_TO_PLAY_AES=your_aes_key_here
+
+# --- Boomstream API base URL (optional) ---
+# Base URL for the Boomstream media API (api/media/folder, etc.).
+# Defaults to https://mcp.boomstream.com/ when not set.
+# Override to point :example-app at a staging or local-dev server during development.
+# Injected as BuildConfig.BOOMSTREAM_API_URL and passed to BoomstreamOptions.apiBaseUrl.
+# BOOMSTREAM_API_URL=https://mcp.boomstream.com/
+
+# --- Boomstream config base URL (optional) ---
+# Base URL for the Boomstream config service ({mediaCode}/config).
+# Defaults to https://play.boomstream.com/ when not set.
+# Override to point :example-app at a staging or local-dev config server.
+# Injected as BuildConfig.BOOMSTREAM_CONFIG_URL and passed to BoomstreamOptions.configBaseUrl.
+# BOOMSTREAM_CONFIG_URL=https://play.boomstream.com/
