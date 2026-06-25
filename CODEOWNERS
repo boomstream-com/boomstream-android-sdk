@@ -1,0 +1,18 @@
+# CODEOWNERS — GitLab native code ownership for review routing.
+# Syntax: <path-pattern>  <@user-or-group> ...
+# Docs: https://docs.gitlab.com/ee/user/project/codeowners/
+
+# Default fallback — covers anything not matched below
+*  @obidnov
+
+# Modules
+/api-sdk/      @obidnov
+/player-sdk/   @obidnov
+/offline-sdk/  @obidnov
+/example-app/  @obidnov
+
+# Build / CI
+/build.gradle.kts     @obidnov
+/settings.gradle.kts  @obidnov
+/.gitlab-ci.yml        @obidnov
+/ci/                   @obidnov
