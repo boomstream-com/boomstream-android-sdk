@@ -1,0 +1,14 @@
+# Dependabot as second CVE-alert layer (free, no NVD dependency).
+# Works on the public GitHub mirror; raises PRs / security alerts for outdated
+# Gradle dependencies with known CVEs sourced from the GitHub Advisory Database.
+version: 2
+updates:
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "security"
