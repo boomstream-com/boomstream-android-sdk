@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Boomstream SDK Demo</string>
+    <string name="download_offline">Скачать для просмотра офлайн</string>
+    <string name="cancel_download">Отменить загрузку</string>
+    <string name="play_offline">Смотреть офлайн</string>
+    <string name="downloading">Загрузка…</string>
+    <string name="download_complete">Загружено</string>
+    <string name="download_failed">Ошибка загрузки</string>
+    <string name="no_api_key">API-ключ не задан. Добавьте BOOMSTREAM_API_KEY в local.properties.</string>
+    <string name="media_loading">Загрузка…</string>
+    <string name="media_list_label">Выберите видео</string>
+    <string name="live_list_label">Трансляции</string>
+    <string name="playlist_list_label">Плейлисты</string>
+    <string name="locale_label">Язык:</string>
+</resources>
