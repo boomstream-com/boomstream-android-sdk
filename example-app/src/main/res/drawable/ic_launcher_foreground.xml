@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="36"
+    android:viewportHeight="36">
+
+    <!--
+        Logo paths from boomstream-customer-app/public/img/logo.svg (viewBox 0 0 24 25).
+        Centered in 36×36 viewport (18dp padding → 72dp safe zone in 108dp adaptive canvas).
+        translateX=(36-24)/2=6, translateY=(36-25)/2=5.5
+    -->
+    <group
+        android:translateX="6"
+        android:translateY="5.5">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M23.5257,12.5007C23.5257,18.8292 18.3931,23.9594 12.0617,23.9594C5.7303,23.9594 0.5977,18.8292 0.5977,12.5007C0.5977,6.1723 5.7303,1.042 12.0617,1.042C18.3931,1.042 23.5257,6.1723 23.5257,12.5007Z" />
+        <path
+            android:fillColor="#9FD700"
+            android:pathData="M6.3298,2.5539C10.25,0.1404 15.5295,0.292 19.6022,3.76C22.9208,6.4728 24.4276,10.8523 23.2225,15.5191C21.6839,14.7049 19.6324,13.6193 18.0938,12.8052C14.0814,10.5436 10.8534,8.8851 6.3281,6.3233C6.3283,4.9663 6.3599,3.941 6.3298,2.5539Z" />
+        <path
+            android:fillColor="#FF7324"
+            android:pathData="M7.8385,19.2278C6.7223,19.9214 5.5759,20.6149 4.4597,21.3085C1.1411,18.2629 -0.0954,14.4034 0.7493,10.0913C1.5337,6.2014 4.3696,3.1558 7.839,1.7988C7.839,3.1558 7.839,4.362 7.839,5.7189C7.9295,10.1817 7.7782,14.765 7.8385,19.2278Z" />
+        <path
+            android:fillColor="#662BFF"
+            android:pathData="M17.4845,12.5C19.023,13.3142 21.6779,14.7013 23.2165,15.5154C22.3114,19.2847 19.1199,22.3584 16.1269,23.3556C12.5067,24.5618 7.9814,24.5618 3.7578,20.6417C4.874,19.9481 5.9601,19.3752 7.0763,18.6817C11.0284,16.4804 13.5324,14.7013 17.4845,12.5Z" />
+    </group>
+</vector>

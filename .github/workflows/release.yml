@@ -1,0 +1,123 @@
+name: Release to Maven Central
+
+# Publishes api-sdk / player-sdk / offline-sdk to Maven Central (Sonatype Central
+# Portal) on a version tag. The release is triggered only by pushing a tag like
+# v1.0.0. Signing is done with the gpg binary (the key is imported into the runner
+# keyring), which avoids the in-memory Bouncy Castle key-parsing issues.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: maven-central
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Resolve version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Import GPG signing key
+        env:
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+        run: |
+          mkdir -p ~/.gnupg && chmod 700 ~/.gnupg
+          echo "allow-loopback-pinentry" >> ~/.gnupg/gpg-agent.conf
+          echo "pinentry-mode loopback" >> ~/.gnupg/gpg.conf
+          gpgconf --kill gpg-agent || true
+          # SIGNING_KEY may be stored either ASCII-armored directly or base64-encoded.
+          if printf '%s' "$SIGNING_KEY" | head -c 30 | grep -q -- "-----BEGIN"; then
+            printf '%s\n' "$SIGNING_KEY" | gpg --batch --import
+          else
+            printf '%s' "$SIGNING_KEY" | base64 --decode | gpg --batch --import
+          fi
+          gpg --list-secret-keys --keyid-format=long
+
+      - name: Build, sign and stage all modules
+        env:
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
+          BOOMSTREAM_API_KEY: ""
+          # Gradle gates signing on a non-empty tag marker; provide the GitHub tag.
+          CI_COMMIT_TAG: ${{ github.ref_name }}
+        run: |
+          ./gradlew publishAllPublicationsToStagingRepository \
+            -Pboomstream.sdk.version="${{ steps.ver.outputs.version }}" \
+            -Psigning.gnupg.executable=gpg \
+            -Psigning.gnupg.keyName="${SIGNING_KEY_ID}" \
+            -Psigning.gnupg.passphrase="${SIGNING_PASSWORD}" \
+            --no-daemon
+          find build/staging-deploy -type f | sort
+
+      - name: Verify every artifact is GPG-signed
+        run: |
+          cd build/staging-deploy
+          missing=0
+          while IFS= read -r f; do
+            case "$f" in
+              *.asc|*.md5|*.sha1|*.sha256|*.sha512|*maven-metadata.xml) continue ;;
+            esac
+            if [ ! -f "${f}.asc" ]; then echo "UNSIGNED: $f"; missing=1; fi
+          done < <(find . -type f)
+          if [ "$missing" -ne 0 ]; then
+            echo "Some primary artifacts are unsigned — aborting before upload."
+            exit 1
+          fi
+          echo "All primary artifacts have .asc signatures."
+
+      - name: Bundle staging tree
+        run: |
+          cd build/staging-deploy && zip -r ../../central-bundle.zip . && cd ../..
+          echo "bundle: $(du -sh central-bundle.zip | cut -f1)"
+
+      - name: Upload bundle to Central Portal
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          RESP=$(curl -f -s -u "${CENTRAL_TOKEN_USERNAME}:${CENTRAL_TOKEN_PASSWORD}" \
+            -F "bundle=@central-bundle.zip" \
+            "https://central.sonatype.com/api/v1/publisher/upload?publishingType=AUTOMATIC")
+          echo "deployment id: ${RESP}"
+          echo "DEPLOYMENT_ID=$(echo "${RESP}" | tr -d '\"')" >> "$GITHUB_ENV"
+
+      - name: Wait for PUBLISHED
+        env:
+          CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
+          CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          for i in $(seq 1 60); do
+            # Central Portal status endpoint is POST (not GET) — a GET returns no
+            # deploymentState and the poll never resolves.
+            S=$(curl -s -X POST -u "${CENTRAL_TOKEN_USERNAME}:${CENTRAL_TOKEN_PASSWORD}" \
+              "https://central.sonatype.com/api/v1/publisher/status?id=${DEPLOYMENT_ID}" \
+              | python3 -c "import sys,json;print(json.load(sys.stdin).get('deploymentState',''))" 2>/dev/null || echo "")
+            echo "[$i/60] deploymentState=$S"
+            case "$S" in
+              PUBLISHED) echo "Published to Maven Central"; exit 0 ;;
+              FAILED|FAILED_VALIDATION) echo "Central publication failed"; exit 1 ;;
+              *) sleep 10 ;;
+            esac
+          done
+          echo "Timed out waiting for PUBLISHED"; exit 1
+
+      - name: Save bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: central-bundle
+          path: central-bundle.zip
+          if-no-files-found: ignore
