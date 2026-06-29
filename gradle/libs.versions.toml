@@ -18,7 +18,7 @@ activityCompose      = "1.9.0"
 media3               = "1.4.1"
 # offline-sdk additions
 securityCrypto       = "1.1.0-alpha06"
-coil                 = "2.6.0"
+coil                 = "2.7.0"
 composeBom           = "2024.06.00"
 # composeCompiler removed — K2 compose plugin (kotlin-compose) version tracks kotlin version
 lifecycle            = "2.8.7"
