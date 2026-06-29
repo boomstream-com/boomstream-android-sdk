@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        FOREGROUND_SERVICE is required for DownloadService on API 28+.
+        FOREGROUND_SERVICE_DATA_SYNC scopes the permission to data-sync type on API 34+ (Android 14).
+        Both are declared here so they are merged into the consumer app's manifest automatically.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+
+    <application>
+        <!--
+            BoomstreamVideoDownloadService handles HLS offline downloads via Media3 DownloadService.
+            Registered here so it is merged into the consumer's manifest without extra setup.
+            Consumers who need to customise the foreground notification or the WorkManager scheduler
+            can subclass BoomstreamVideoDownloadService and register their subclass instead.
+        -->
+        <service
+            android:name="com.boomstream.sdk.offline.BoomstreamVideoDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
+
+</manifest>
