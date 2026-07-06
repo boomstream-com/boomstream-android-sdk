@@ -21,7 +21,7 @@ securityCrypto       = "1.1.0-alpha06"
 coil                 = "2.6.0"
 composeBom           = "2024.06.00"
 # composeCompiler removed — K2 compose plugin (kotlin-compose) version tracks kotlin version
-lifecycle            = "2.8.7"
+lifecycle            = "2.11.0"
 
 [libraries]
 kotlin-stdlib          = { module = "org.jetbrains.kotlin:kotlin-stdlib",                                  version.ref = "kotlin" }
