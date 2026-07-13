@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      XML attributes for com.boomstream.sdk.player.BoomstreamPlayerView.
+      Mirrors Media3's surface_type choice but scoped to the Boomstream public View.
+    -->
+    <declare-styleable name="BoomstreamPlayerView">
+        <!-- Which view backs video rendering. See BoomstreamSurfaceType. Default: surface_view. -->
+        <attr name="boomstreamSurfaceType" format="enum">
+            <enum name="surface_view" value="0" />
+            <enum name="texture_view" value="1" />
+        </attr>
+    </declare-styleable>
+</resources>

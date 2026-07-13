@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Internal PlayerView layout: SurfaceView-backed rendering (Media3 default).
+  Inflated by com.boomstream.sdk.player.internal.inflatePlayerView. Not a public resource.
+-->
+<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="surface_view" />

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="boomstream_offline_download_channel_name">Video downloads</string>
+    <string name="boomstream_offline_download_notification_title">Downloading video</string>
+    <string name="boomstream_offline_waiting_for_network">Waiting for network…</string>
+    <string name="boomstream_offline_download_queued">Download queued</string>
+
+    <plurals name="boomstream_offline_downloading_count">
+        <item quantity="one">Downloading %d video</item>
+        <item quantity="other">Downloading %d videos</item>
+    </plurals>
+</resources>
