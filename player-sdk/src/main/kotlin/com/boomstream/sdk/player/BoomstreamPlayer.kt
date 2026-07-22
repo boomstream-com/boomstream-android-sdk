@@ -2,13 +2,17 @@ package com.boomstream.sdk.player
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -216,6 +220,8 @@ fun BoomstreamPlayer(
     }
 
     val state by player.stateFlow.collectAsState()
+    val availableQualities by player.availableQualities.collectAsState()
+    val currentQuality by player.currentQuality.collectAsState()
 
     // Propagate state changes to the caller.
     LaunchedEffect(state) { onState(state) }
@@ -291,6 +297,50 @@ fun BoomstreamPlayer(
                                     .padding(horizontal = 16.dp, vertical = 12.dp)
                                     .clickable { visible = false },
                             )
+                        }
+                    }
+
+                    // Optional quality selector (enabled via AdvancedPlayerOptions.enableQualitySelector).
+                    if (advancedOptions.enableQualitySelector && availableQualities.isNotEmpty()) {
+                        var menuExpanded by remember { mutableStateOf(false) }
+                        val qualityLabel = when (val q = currentQuality) {
+                            is VideoQuality.Auto -> "Auto"
+                            is VideoQuality.Resolution -> q.label
+                        }
+                        Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
+                            TextButton(
+                                onClick = { menuExpanded = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            ) {
+                                Text(
+                                    text = qualityLabel,
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Auto") },
+                                    onClick = {
+                                        player.selectAuto()
+                                        menuExpanded = false
+                                    },
+                                )
+                                availableQualities.forEach { quality ->
+                                    if (quality is VideoQuality.Resolution) {
+                                        DropdownMenuItem(
+                                            text = { Text(quality.label) },
+                                            onClick = {
+                                                player.selectQuality(quality)
+                                                menuExpanded = false
+                                            },
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

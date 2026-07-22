@@ -7,6 +7,32 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.5.0] — 2026-07-22
+
+### Added
+
+- **Video quality selection API** (`player-sdk`) — the player now exposes the HLS renditions
+  discovered from the master manifest for programmatic selection. New on
+  `BoomstreamPlayerController`:
+  - `availableQualities: StateFlow<List<VideoQuality>>` — populated after the first track-ready
+    event, sorted highest-resolution first, reset to empty on each `load()`.
+  - `currentQuality: StateFlow<VideoQuality>` — `VideoQuality.Auto` by default and after each
+    `load()`; updated synchronously by `selectQuality` / `selectAuto`.
+  - `selectQuality(quality: VideoQuality)` — locks playback to a specific rendition. The rendition
+    change takes effect on the next segment boundary without a reload.
+  - `selectAuto()` — clears the override and returns to adaptive bitrate selection.
+- **`VideoQuality` sealed class** — media3-free public model with `Auto` and
+  `Resolution(height, bitrate, label)`; ExoPlayer mapping happens exclusively inside `player-sdk`'s
+  `internal` package (CSO constraint #1).
+- **`PlayerEvent.QualityChanged(quality: VideoQuality)`** — emitted whenever the active quality
+  changes via `selectQuality` / `selectAuto`.
+- **`AdvancedPlayerOptions.enableQualitySelector`** — opt-in flag (default `false`) that renders a
+  quality-selection button in the built-in player controls overlay. When `false`, only the
+  programmatic API is exposed. See
+  [docs/PLAYER-API.md](docs/PLAYER-API.md) → "Video quality selection".
+
+---
+
 ## [1.4.0] — 2026-07-13
 
 ### Added

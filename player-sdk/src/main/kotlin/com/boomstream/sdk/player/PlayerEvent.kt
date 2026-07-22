@@ -32,4 +32,7 @@ sealed class PlayerEvent {
 
     /** The fullscreen state changed via [BoomstreamPlayerController.setFullScreen] or [BoomstreamPlayerController.toggleFullScreen]. */
     data class FullScreenChanged(val isFullScreen: Boolean) : PlayerEvent()
+
+    /** The active video quality changed via [BoomstreamPlayerController.selectQuality] or [BoomstreamPlayerController.selectAuto]. */
+    data class QualityChanged(val quality: VideoQuality) : PlayerEvent()
 }

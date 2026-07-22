@@ -33,9 +33,9 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.boomstream:player-sdk:1.4.0")
-    implementation("com.boomstream:api-sdk:1.4.0")
-    implementation("com.boomstream:offline-sdk:1.4.0") // опционально — только если нужны offline-загрузки
+    implementation("com.boomstream:player-sdk:1.5.0")
+    implementation("com.boomstream:api-sdk:1.5.0")
+    implementation("com.boomstream:offline-sdk:1.5.0") // опционально — только если нужны offline-загрузки
 }
 ```
 
@@ -103,7 +103,7 @@ example-app ──► player-sdk, offline-sdk, api-sdk
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.4.0")
+implementation("com.boomstream:player-sdk:1.5.0")
 ```
 
 ### Jetpack Compose
@@ -231,6 +231,38 @@ ctrl.setVolume(80)
 
 For the full event table, all control methods, fullscreen recipe, and web-to-native mapping, see [docs/PLAYER-API.md](docs/PLAYER-API.md).
 
+### Video quality selection
+
+Начиная с v1.5.0, `BoomstreamPlayerController` даёт доступ к вариантам качества из HLS-манифеста —
+можно переключать программно или показать встроенную кнопку выбора в контролах плеера.
+
+```kotlin
+val controller = rememberBoomstreamPlayerController()
+BoomstreamPlayer(
+    mediaCode = "Il4lNOfL",
+    configClient = Boomstream.configClient,
+    controller = controller,
+    // Опционально: встроенная кнопка выбора качества в контролах плеера (по умолчанию off)
+    advancedOptions = AdvancedPlayerOptions(enableQualitySelector = true),
+)
+
+// Программное переключение
+val options by controller.availableQualities.collectAsState() // пусто до готовности треков
+options.filterIsInstance<VideoQuality.Resolution>().forEach { q ->
+    Button(onClick = { controller.selectQuality(q) }) { Text(q.label) }
+}
+Button(onClick = { controller.selectAuto() }) { Text("Auto") }
+
+// Событие смены качества
+LaunchedEffect(controller) {
+    controller.events.collect { if (it is PlayerEvent.QualityChanged) analytics.log(it.quality) }
+}
+```
+
+Варианты качества берутся из HLS master-манифеста и появляются после первого track-ready события
+(до этого `availableQualities` — пустой список). Подробности —
+[docs/PLAYER-API.md → Video quality selection](docs/PLAYER-API.md#video-quality-selection).
+
 ### Offline playback
 
 После загрузки через `offline-sdk` передайте `offlineCache` для воспроизведения из кеша:
@@ -252,7 +284,7 @@ BoomstreamPlayer(
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:offline-sdk:1.4.0")
+implementation("com.boomstream:offline-sdk:1.5.0")
 ```
 
 ### Инициализация
@@ -302,7 +334,7 @@ offlineManager.getDownloadState("Il4lNOfL").collect { state ->
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:api-sdk:1.4.0")
+implementation("com.boomstream:api-sdk:1.5.0")
 ```
 
 ### Использование Boomstream API
@@ -500,9 +532,9 @@ dependencyResolutionManagement {
 **2. Add the dependencies** to `app/build.gradle.kts`:
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.4.0")
-implementation("com.boomstream:api-sdk:1.4.0")
-implementation("com.boomstream:offline-sdk:1.4.0") // optional
+implementation("com.boomstream:player-sdk:1.5.0")
+implementation("com.boomstream:api-sdk:1.5.0")
+implementation("com.boomstream:offline-sdk:1.5.0") // optional
 ```
 
 **3. Initialize** in `Application.onCreate()`:
@@ -571,7 +603,23 @@ BoomstreamPlayer(
     configClient = Boomstream.configClient,
     locale = "ru",
 )
+
+// Programmatic playback control, events, and quality selection (v1.2.0+ / v1.5.0+)
+val controller = rememberBoomstreamPlayerController()
+BoomstreamPlayer(
+    mediaCode = "Il4lNOfL",
+    configClient = Boomstream.configClient,
+    controller = controller,
+    // Optional: built-in quality-selector button in the player controls overlay (default off)
+    advancedOptions = AdvancedPlayerOptions(enableQualitySelector = true),
+)
+controller.selectQuality(VideoQuality.Resolution(height = 720))
+controller.selectAuto()
+// Full reference — see docs/PLAYER-API.md
 ```
+
+For programmatic playback control, event observation, and video quality selection —
+see [docs/PLAYER-API.md](docs/PLAYER-API.md).
 
 ### offline-sdk
 

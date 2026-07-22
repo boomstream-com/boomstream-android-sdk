@@ -55,7 +55,7 @@ lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-com
 # player-sdk: image loading
 coil                     = { module = "io.coil-kt:coil",                            version.ref = "coil" }
 coil-compose             = { module = "io.coil-kt:coil-compose",                    version.ref = "coil" }
-# offline-sdk: EncryptedSharedPreferences for keyset persistence (CSO constraint #3)
+# offline-sdk: EncryptedSharedPreferences for keyset persistence (CSO constraint #3 )
 security-crypto          = { module = "androidx.security:security-crypto",          version.ref = "securityCrypto" }
 
 [plugins]

@@ -7,6 +7,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.PopupMenu
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -176,6 +178,31 @@ class BoomstreamPlayerView @JvmOverloads constructor(
     private var eventForwardJob: Job? = null
     private var progressForwardJob: Job? = null
 
+    // ── Quality state (stable across load() calls) ──────────────────────────────
+
+    private val _availableQualities = MutableStateFlow<List<VideoQuality>>(emptyList())
+    private val _currentQuality = MutableStateFlow<VideoQuality>(VideoQuality.Auto)
+    private var qualityForwardJobs: List<Job> = emptyList()
+    private var _enableQualitySelector: Boolean = false
+
+    /** Overlay button shown when [AdvancedPlayerOptions.enableQualitySelector] is true and tracks are available. */
+    private val qualitySelectorView: TextView = TextView(context).also { tv ->
+        tv.visibility = View.GONE
+        tv.setTextColor(Color.WHITE)
+        tv.setBackgroundColor(Color.argb(0xCC, 0, 0, 0))
+        val padV = (6 * resources.displayMetrics.density).toInt()
+        val padH = (10 * resources.displayMetrics.density).toInt()
+        tv.setPadding(padH, padV, padH, padV)
+        val margin = (8 * resources.displayMetrics.density).toInt()
+        val lp = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).also {
+            it.gravity = Gravity.TOP or Gravity.END
+            it.topMargin = margin
+            it.marginEnd = margin
+        }
+        tv.setOnClickListener { view -> showQualityPopup(view) }
+        addView(tv, lp)
+    }
+
     // ── Controller ─────────────────────────────────────────────────────────────
 
     /**
@@ -188,6 +215,8 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         override val events: SharedFlow<PlayerEvent> = _events
         override val progressFlow: StateFlow<PlaybackProgress> = _progressFlow
         override val state: StateFlow<PlayerState> = _stateFlow
+        override val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
+        override val currentQuality: StateFlow<VideoQuality> = _currentQuality
 
         override fun getCurrentPosition(): Long = mediaPlayer?.getCurrentPosition() ?: 0L
         override fun getDuration(): Long = mediaPlayer?.getDuration() ?: -1L
@@ -207,6 +236,8 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         override fun toggleFullScreen() {
             setFullScreen(!_isFullScreen)
         }
+        override fun selectQuality(quality: VideoQuality) { mediaPlayer?.selectQuality(quality) }
+        override fun selectAuto() { mediaPlayer?.selectAuto() }
     }
 
     /** Convenience proxy — equivalent to `controller.events`. */
@@ -214,6 +245,12 @@ class BoomstreamPlayerView @JvmOverloads constructor(
 
     /** Convenience proxy — equivalent to `controller.progressFlow`. */
     val progressFlow: StateFlow<PlaybackProgress> = _progressFlow
+
+    /** Convenience proxy — equivalent to `controller.availableQualities`. */
+    val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
+
+    /** Convenience proxy — equivalent to `controller.currentQuality`. */
+    val currentQuality: StateFlow<VideoQuality> = _currentQuality
 
     // ── Convenience control methods ────────────────────────────────────────────
 
@@ -264,6 +301,12 @@ class BoomstreamPlayerView @JvmOverloads constructor(
      */
     fun toggleFullScreen() = controller.toggleFullScreen()
 
+    /** @see BoomstreamPlayerController.selectQuality */
+    fun selectQuality(quality: VideoQuality) = controller.selectQuality(quality)
+
+    /** @see BoomstreamPlayerController.selectAuto */
+    fun selectAuto() = controller.selectAuto()
+
     // ── Public API ─────────────────────────────────────────────────────────────
 
     /**
@@ -301,6 +344,8 @@ class BoomstreamPlayerView @JvmOverloads constructor(
     ) {
         releaseInternal()
 
+        _enableQualitySelector = advancedOptions.enableQualitySelector
+
         // Prefer the explicit per-call token; fall back to the token baked into the configClient
         // at init time (from BoomstreamOptions.userAgentToken) so callers using the new
         // single-call init pattern don't have to repeat the token here.
@@ -324,6 +369,15 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         // Forward events and progress from the new player into the stable flows.
         eventForwardJob = scope.launch { player.events.collect { _events.emit(it) } }
         progressForwardJob = scope.launch { player.progressFlow.collect { _progressFlow.value = it } }
+
+        // Forward quality state and drive the optional overlay button.
+        val qualityJob1 = scope.launch { player.availableQualities.collect { _availableQualities.value = it } }
+        val qualityJob2 = scope.launch { player.currentQuality.collect { _currentQuality.value = it } }
+        qualityForwardJobs = listOf(qualityJob1, qualityJob2)
+        scope.launch {
+            combine(player.availableQualities, player.currentQuality) { q, c -> q to c }
+                .collect { (qualities, current) -> applyQualitySelectorState(qualities, current) }
+        }
 
         player.load(mediaCode, configClient)
     }
@@ -375,6 +429,8 @@ class BoomstreamPlayerView @JvmOverloads constructor(
     private fun releaseInternal() {
         eventForwardJob?.cancel(); eventForwardJob = null
         progressForwardJob?.cancel(); progressForwardJob = null
+        qualityForwardJobs.forEach { it.cancel() }
+        qualityForwardJobs = emptyList()
         observerScope?.cancel()
         observerScope = null
         mediaPlayer?.release()
@@ -382,6 +438,9 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         playerView.player = null
         _stateFlow.value = PlayerState.Idle
         _progressFlow.value = PlaybackProgress(0L, -1L, 0f)
+        _availableQualities.value = emptyList()
+        _currentQuality.value = VideoQuality.Auto
+        qualitySelectorView.visibility = View.GONE
     }
 
     private fun applyState(state: PlayerState) {
@@ -442,6 +501,39 @@ class BoomstreamPlayerView @JvmOverloads constructor(
                 messageView.visibility = View.GONE
             }
         }
+    }
+
+    private fun applyQualitySelectorState(qualities: List<VideoQuality>, current: VideoQuality) {
+        if (_enableQualitySelector && qualities.isNotEmpty()) {
+            qualitySelectorView.text = when (current) {
+                is VideoQuality.Auto -> "Auto"
+                is VideoQuality.Resolution -> current.label
+            }
+            qualitySelectorView.visibility = View.VISIBLE
+        } else {
+            qualitySelectorView.visibility = View.GONE
+        }
+    }
+
+    private fun showQualityPopup(anchor: View) {
+        val qualities = _availableQualities.value
+        if (qualities.isEmpty()) return
+        val menu = PopupMenu(context, anchor)
+        menu.menu.add(0, 0, 0, "Auto")
+        qualities.forEachIndexed { idx, q ->
+            if (q is VideoQuality.Resolution) {
+                menu.menu.add(0, idx + 1, idx + 1, q.label)
+            }
+        }
+        menu.setOnMenuItemClickListener { item ->
+            if (item.itemId == 0) {
+                controller.selectAuto()
+            } else {
+                qualities.getOrNull(item.itemId - 1)?.let { controller.selectQuality(it) }
+            }
+            true
+        }
+        menu.show()
     }
 
     // NOTE: we deliberately do NOT cancel [observerScope] in onDetachedFromWindow(). The scope's

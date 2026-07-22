@@ -5,10 +5,12 @@ import androidx.annotation.OptIn
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.media3.common.C
+import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
@@ -24,6 +26,7 @@ import com.boomstream.sdk.player.BoomstreamOfflineCache
 import com.boomstream.sdk.player.PlaybackProgress
 import com.boomstream.sdk.player.PlayerEvent
 import com.boomstream.sdk.player.PlayerState
+import com.boomstream.sdk.player.VideoQuality
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -95,6 +98,12 @@ internal class BoomstreamMediaPlayer(
 
     private val _progressFlow = MutableStateFlow(PlaybackProgress(0L, -1L, 0f))
     internal val progressFlow: StateFlow<PlaybackProgress> = _progressFlow
+
+    private val _availableQualities = MutableStateFlow<List<VideoQuality>>(emptyList())
+    internal val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
+
+    private val _currentQuality = MutableStateFlow<VideoQuality>(VideoQuality.Auto)
+    internal val currentQuality: StateFlow<VideoQuality> = _currentQuality
 
     private var progressJob: Job? = null
     private var _isFullScreen = false
@@ -270,6 +279,13 @@ internal class BoomstreamMediaPlayer(
                     playbackState = { player.playbackState },
                 )
             )
+
+            // Listener 3: track-change detector — populates _availableQualities from HLS variants.
+            player.addListener(object : Player.Listener {
+                override fun onTracksChanged(tracks: Tracks) {
+                    _availableQualities.value = buildQualityList(tracks)
+                }
+            })
         }
 
     /**
@@ -285,6 +301,13 @@ internal class BoomstreamMediaPlayer(
         _state.value = PlayerState.Loading
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
+        // Reset quality state for the new media item.
+        _availableQualities.value = emptyList()
+        _currentQuality.value = VideoQuality.Auto
+        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+            .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
+            .setMaxVideoBitrate(Int.MAX_VALUE)
+            .build()
         startProgressPolling()
         fetchJob = scope.launch {
             val result = configClient.getConfig(mediaCode)
@@ -416,6 +439,8 @@ internal class BoomstreamMediaPlayer(
         currentMediaCode = null
         currentConfigClient = null
         playlistItems = emptyList()
+        _availableQualities.value = emptyList()
+        _currentQuality.value = VideoQuality.Auto
         exoPlayer.release()
         _state.value = PlayerState.Idle
         _progressFlow.value = PlaybackProgress(0L, -1L, 0f)
@@ -481,6 +506,29 @@ internal class BoomstreamMediaPlayer(
     internal fun toggleFullScreen() {
         setFullScreen(!_isFullScreen)
     }
+
+    /**
+     * Locks video rendition to [quality]. Mutates [ExoPlayer.trackSelectionParameters] so
+     * ExoPlayer adapts to the closest track ≤ the requested height without reload.
+     * For [VideoQuality.Auto] clears all video-size / bitrate constraints.
+     */
+    internal fun selectQuality(quality: VideoQuality) {
+        val params = when (quality) {
+            is VideoQuality.Auto -> exoPlayer.trackSelectionParameters.buildUpon()
+                .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
+                .setMaxVideoBitrate(Int.MAX_VALUE)
+                .build()
+            is VideoQuality.Resolution -> exoPlayer.trackSelectionParameters.buildUpon()
+                .setMaxVideoSize(Int.MAX_VALUE, quality.height)
+                .also { b -> if (quality.bitrate > 0) b.setMaxVideoBitrate(quality.bitrate.toInt()) }
+                .build()
+        }
+        exoPlayer.trackSelectionParameters = params
+        _currentQuality.value = quality
+        _events.tryEmit(PlayerEvent.QualityChanged(quality))
+    }
+
+    internal fun selectAuto() = selectQuality(VideoQuality.Auto)
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
@@ -601,3 +649,28 @@ internal class BoomstreamMediaPlayer(
  */
 private fun bestPosterUrl(posters: List<com.boomstream.sdk.api.model.Poster>): String? =
     posters.maxByOrNull { it.width.toLong() * it.height.toLong() }?.link
+
+/**
+ * Maps all video renditions in [tracks] to [VideoQuality.Resolution] entries, de-duped by height
+ * and sorted highest-resolution first. Returns an empty list when no video tracks are available.
+ *
+ * Only renditions with a known height (> 0) are included. Renditions that share the same pixel
+ * height are collapsed to one entry (keeping the first seen, which is typically the lower-bitrate
+ * variant for identical-height codec ladders).
+ */
+private fun buildQualityList(tracks: Tracks): List<VideoQuality.Resolution> {
+    val seen = mutableSetOf<Int>()
+    return tracks.groups
+        .filter { it.type == C.TRACK_TYPE_VIDEO }
+        .flatMap { group ->
+            (0 until group.length).mapNotNull { i ->
+                val format = group.getTrackFormat(i)
+                val height = format.height
+                if (height <= 0 || !seen.add(height)) return@mapNotNull null
+                val bitrate = format.bitrate
+                val bitrateL = if (bitrate == Format.NO_VALUE) -1L else bitrate.toLong()
+                VideoQuality.Resolution(height = height, bitrate = bitrateL)
+            }
+        }
+        .sortedByDescending { it.height }
+}

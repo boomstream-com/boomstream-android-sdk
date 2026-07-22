@@ -51,6 +51,7 @@ import com.boomstream.sdk.api.Boomstream
 import com.boomstream.sdk.player.BoomstreamPlayer
 import com.boomstream.sdk.player.BoomstreamSurfaceType
 import com.boomstream.sdk.player.PlayerEvent
+import com.boomstream.sdk.player.VideoQuality
 import com.boomstream.sdk.player.rememberBoomstreamPlayerController
 
 @Composable
@@ -60,6 +61,8 @@ fun PlayerDemoScreen(vm: MainViewModel) {
 
     val controller = rememberBoomstreamPlayerController()
     val progress by controller.progressFlow.collectAsState()
+    val availableQualities by controller.availableQualities.collectAsState()
+    val currentQuality by controller.currentQuality.collectAsState()
 
     // Fullscreen tracking — synced from FullScreenChanged events
     var isFullScreen by remember { mutableStateOf(false) }
@@ -327,6 +330,63 @@ fun PlayerDemoScreen(vm: MainViewModel) {
 
             Spacer(modifier = Modifier.height(4.dp))
 
+            // ── Quality selection (Player API demo) ──────────────────────────
+            Text(
+                text = "Качество видео",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            val currentLabel = when (val q = currentQuality) {
+                is VideoQuality.Auto -> "Auto"
+                is VideoQuality.Resolution -> q.label
+            }
+            Text(
+                text = "Текущее: $currentLabel",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+            if (availableQualities.isEmpty()) {
+                Text(
+                    text = "— варианты появятся после загрузки медиа —",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                )
+            } else {
+                // Auto button + one button per quality rendition
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    val isAuto = currentQuality is VideoQuality.Auto
+                    if (isAuto) {
+                        Button(
+                            onClick = { controller.selectAuto() },
+                        ) { Text("Auto") }
+                    } else {
+                        OutlinedButton(
+                            onClick = { controller.selectAuto() },
+                        ) { Text("Auto") }
+                    }
+                    availableQualities.forEach { quality ->
+                        if (quality is VideoQuality.Resolution) {
+                            val isSelected = currentQuality == quality
+                            if (isSelected) {
+                                Button(
+                                    onClick = { controller.selectQuality(quality) },
+                                ) { Text(quality.label) }
+                            } else {
+                                OutlinedButton(
+                                    onClick = { controller.selectQuality(quality) },
+                                ) { Text(quality.label) }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
             // ── Event log ────────────────────────────────────────────────────
             Text(
                 text = "События (последние 5)",
@@ -425,4 +485,8 @@ private fun formatEvent(event: PlayerEvent): String = when (event) {
     is PlayerEvent.Progress -> "Progress ${(event.percent * 100).toInt()}%"
     is PlayerEvent.Seeked -> "Seeked  pos=${formatMs(event.positionMs)}"
     is PlayerEvent.FullScreenChanged -> "FullScreenChanged  fs=${event.isFullScreen}"
+    is PlayerEvent.QualityChanged -> when (val q = event.quality) {
+        is VideoQuality.Auto -> "QualityChanged  Auto"
+        is VideoQuality.Resolution -> "QualityChanged  ${q.label}"
+    }
 }

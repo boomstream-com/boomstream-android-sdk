@@ -75,6 +75,18 @@ class ConstraintOneReflectionTest {
         assertNoExoPlayerExposure(BoomstreamPlayerController::class.java)
     }
 
+    /**
+     * [VideoQuality] sealed class and its variants must not expose ExoPlayer types.
+     * It is the media3-free model that crosses the public API boundary instead of raw
+     * [androidx.media3.common.Format] or [androidx.media3.common.TrackSelectionParameters].
+     */
+    @Test
+    fun `VideoQuality sealed class exposes no ExoPlayer in public API — CSO constraint 1`() {
+        assertNoExoPlayerExposure(VideoQuality::class.java)
+        assertNoExoPlayerExposure(VideoQuality.Auto::class.java)
+        assertNoExoPlayerExposure(VideoQuality.Resolution::class.java)
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun assertNoExoPlayerExposure(cls: Class<*>) {

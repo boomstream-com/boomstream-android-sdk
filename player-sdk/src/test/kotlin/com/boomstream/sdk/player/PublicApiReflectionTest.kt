@@ -44,8 +44,13 @@ class PublicApiReflectionTest {
         PlayerEvent.Progress::class.java,
         PlayerEvent.Seeked::class.java,
         PlayerEvent.FullScreenChanged::class.java,
+        PlayerEvent.QualityChanged::class.java,
         // BoomstreamPlayerController is an interface — check its declared methods.
         BoomstreamPlayerController::class.java,
+        // VideoQuality — media3-free quality model (CSO constraint #1 gate).
+        VideoQuality::class.java,
+        VideoQuality.Auto::class.java,
+        VideoQuality.Resolution::class.java,
         // Top-level @Composable fun BoomstreamPlayer(...) compiles to BoomstreamPlayerKt.
         Class.forName("com.boomstream.sdk.player.BoomstreamPlayerKt"),
     )

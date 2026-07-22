@@ -1,6 +1,7 @@
 # Boomstream Player API — Events & Controls
 
 Full reference for programmatic player observation and control in `player-sdk` v1.2.0+.
+Video quality selection was added in v1.5.0 (see [Video quality selection](#video-quality-selection)).
 
 - [Controller](#controller)
   - [Compose path](#compose-path)
@@ -14,6 +15,7 @@ Full reference for programmatic player observation and control in `player-sdk` v
   - [Fullscreen handling](#fullscreen-handling)
 - [Web → Native mapping](#web--native-mapping)
 - [Surface type (SurfaceView vs TextureView)](#surface-type-surfaceview-vs-textureview)
+- [Video quality selection](#video-quality-selection)
 - [Backward compatibility](#backward-compatibility)
 
 ---
@@ -80,6 +82,7 @@ Late subscribers **do not** receive past events — start collecting before play
 | `PlayerEvent.Progress` | `positionMs: Long`, `durationMs: Long`, `percent: Float` | Periodic progress tick (~300 ms) while playing. Prefer `progressFlow` for UI binding — it is a `StateFlow` and always holds the latest value. |
 | `PlayerEvent.Seeked` | `positionMs: Long` | A programmatic or user-initiated seek completed. |
 | `PlayerEvent.FullScreenChanged` | `isFullScreen: Boolean` | Fullscreen state changed via `setFullScreen()` or `toggleFullScreen()`. |
+| `PlayerEvent.QualityChanged` | `quality: VideoQuality` | Active video quality changed via `selectQuality()` or `selectAuto()`. Available in `player-sdk` v1.5.0+. |
 
 `percent` in `Progress` is in the range `[0f..1f]`.
 
@@ -321,6 +324,115 @@ attribute on `BoomstreamPlayerView` needs no such care — it is re-read on ever
 > **Interim workaround without an SDK upgrade:** removing `orientation` from the host Activity's
 > `android:configChanges` lets Android recreate the Activity on rotation instead of driving a live
 > surface hand-off, which also avoids the crash. Prefer `TEXTURE_VIEW` for a seamless rotation.
+
+---
+
+## Video quality selection
+
+_Available in `player-sdk` v1.5.0+._
+
+The controller exposes the HLS renditions discovered from the master manifest for programmatic
+selection, plus an opt-in built-in UI button.
+
+### Model
+
+```kotlin
+sealed class VideoQuality {
+    /** Adaptive quality — ExoPlayer picks the best rendition for the current bandwidth. */
+    object Auto : VideoQuality()
+
+    /** Locked to a specific rendition. */
+    data class Resolution(
+        val height: Int,        // vertical pixels, e.g. 1080, 720, 480
+        val bitrate: Long = -1L, // peak bitrate in bits/s, -1 if unknown
+        val label: String = "${height}p",
+    ) : VideoQuality()
+}
+```
+
+The type is intentionally **media3-free** — no `androidx.media3.common.Format` /
+`TrackSelectionParameters` leaks into the public API (CSO constraint #1).
+
+### Controller surface
+
+| Member | Type | Description |
+|---|---|---|
+| `availableQualities` | `StateFlow<List<VideoQuality>>` | Renditions from the current media's HLS master manifest. Empty until the first track-ready event; reset to empty on each `load()`. Sorted highest-resolution first. |
+| `currentQuality` | `StateFlow<VideoQuality>` | Currently selected quality. `VideoQuality.Auto` by default and after each `load()`. Updated synchronously by `selectQuality` / `selectAuto`. |
+| `selectQuality(quality)` | `fun` | Locks playback to `quality`. Takes effect on the next segment boundary — no reload. Emits `PlayerEvent.QualityChanged`. No-op if the player has not yet loaded media. |
+| `selectAuto()` | `fun` | Clears the override and returns to adaptive bitrate selection. Emits `PlayerEvent.QualityChanged` with `VideoQuality.Auto`. No-op if the player has not yet loaded media. |
+| `PlayerEvent.QualityChanged` | `event` | Fires whenever the active quality changes via `selectQuality` / `selectAuto`. |
+
+`availableQualities` reflects **only** the renditions the server advertises in the HLS master
+manifest — it does not manufacture options. For a single-rendition stream the list stays
+empty and the built-in quality button (if enabled) is hidden.
+
+### Reading available options
+
+`availableQualities` starts empty and populates once the first track-ready event arrives.
+Consumers should collect it as a `StateFlow` rather than reading once at load time.
+
+```kotlin
+val controller = rememberBoomstreamPlayerController()
+val options by controller.availableQualities.collectAsState()
+val current by controller.currentQuality.collectAsState()
+
+// options is empty until playback is ready
+if (options.isNotEmpty()) {
+    Row {
+        Text("Current: ${(current as? VideoQuality.Resolution)?.label ?: "Auto"}")
+        options.forEach { q ->
+            when (q) {
+                is VideoQuality.Resolution -> Button(onClick = { controller.selectQuality(q) }) {
+                    Text(q.label)
+                }
+                VideoQuality.Auto -> Unit // Auto is always available via selectAuto()
+            }
+        }
+        Button(onClick = { controller.selectAuto() }) { Text("Auto") }
+    }
+}
+```
+
+### Reacting to changes
+
+```kotlin
+LaunchedEffect(controller) {
+    controller.events.collect { event ->
+        if (event is PlayerEvent.QualityChanged) {
+            when (val q = event.quality) {
+                is VideoQuality.Resolution -> analytics.log("quality:${q.height}p")
+                VideoQuality.Auto -> analytics.log("quality:auto")
+            }
+        }
+    }
+}
+```
+
+### Built-in quality selector button (opt-in)
+
+Set `AdvancedPlayerOptions.enableQualitySelector = true` to render a quality-selection button in
+the built-in player controls overlay. The button opens a menu of `availableQualities`; picking a
+row calls `selectQuality` / `selectAuto` under the hood.
+
+```kotlin
+// Compose
+BoomstreamPlayer(
+    mediaCode = mediaCode,
+    configClient = Boomstream.configClient,
+    advancedOptions = AdvancedPlayerOptions(enableQualitySelector = true),
+)
+
+// View — pass advancedOptions to load()
+playerView.load(
+    mediaCode = "Il4lNOfL",
+    configClient = Boomstream.configClient,
+    advancedOptions = AdvancedPlayerOptions(enableQualitySelector = true),
+)
+```
+
+The default is `false` — only the programmatic API is exposed. The button auto-hides for streams
+whose master manifest advertises a single rendition (`availableQualities` stays empty).
 
 ---
 

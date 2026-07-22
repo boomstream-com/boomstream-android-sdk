@@ -77,4 +77,32 @@ interface BoomstreamPlayerController {
 
     /** Toggles the current fullscreen state and emits [PlayerEvent.FullScreenChanged]. */
     fun toggleFullScreen()
+
+    /**
+     * Available video quality renditions discovered from the HLS master manifest.
+     * Empty until the first track-ready event; resets to empty on each new [load].
+     * Renditions are sorted highest-resolution first.
+     */
+    val availableQualities: StateFlow<List<VideoQuality>>
+
+    /**
+     * Currently selected quality. [VideoQuality.Auto] by default and after each [load].
+     * Updated synchronously when [selectQuality] or [selectAuto] is called.
+     */
+    val currentQuality: StateFlow<VideoQuality>
+
+    /**
+     * Locks playback to [quality]. The rendition change takes effect on the next segment
+     * boundary without requiring a reload.
+     * Emits [PlayerEvent.QualityChanged].
+     * No-op if the player is not yet loaded.
+     */
+    fun selectQuality(quality: VideoQuality)
+
+    /**
+     * Clears any quality override and returns to adaptive bitrate selection.
+     * Emits [PlayerEvent.QualityChanged] with [VideoQuality.Auto].
+     * No-op if the player is not yet loaded.
+     */
+    fun selectAuto()
 }
