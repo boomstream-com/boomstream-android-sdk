@@ -2,17 +2,13 @@ package com.boomstream.sdk.player
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -39,7 +35,9 @@ import com.boomstream.sdk.api.internal.UserAgentTokenProvider
 import com.boomstream.sdk.player.internal.BoomstreamComposableController
 import com.boomstream.sdk.player.internal.BoomstreamMediaPlayer
 import com.boomstream.sdk.player.internal.applyLiveControllerUi
+import com.boomstream.sdk.player.internal.applyStyleToPlayerView
 import com.boomstream.sdk.player.internal.inflatePlayerView
+import com.boomstream.sdk.player.internal.interceptSettingsButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -152,6 +150,12 @@ fun rememberBoomstreamPlayerController(): BoomstreamPlayerController =
  *                       event observation.  Pass `null` (default) when no programmatic access is
  *                       needed.
  * @param onState        Called whenever [PlayerState] changes. Runs on the main thread.
+ * @param style              Optional [BoomstreamPlayerStyle] for visual customisation. Affects the
+ *                           loading spinner colour, seek bar colours, message overlay colours, and
+ *                           (best-effort) accent tint on Media3 control buttons.
+ *                           Pass `null` (default) to keep the SDK defaults.
+ *                           Compose callers should convert [androidx.compose.ui.graphics.Color]
+ *                           values via [androidx.compose.ui.graphics.Color.toArgb].
  * @param onFullscreenToggle Optional callback fired when the user taps the fullscreen button.
  *                           Implement to handle orientation / window changes in the host Activity.
  *                           Pass `null` (default) to hide the fullscreen button.
@@ -166,6 +170,7 @@ fun BoomstreamPlayer(
     locale: String? = null,
     advancedOptions: AdvancedPlayerOptions = AdvancedPlayerOptions(),
     surfaceType: BoomstreamSurfaceType = BoomstreamSurfaceType.SURFACE_VIEW,
+    style: BoomstreamPlayerStyle? = null,
     controller: BoomstreamPlayerController? = null,
     onState: (PlayerState) -> Unit = {},
     onFullscreenToggle: (() -> Unit)? = null,
@@ -220,8 +225,6 @@ fun BoomstreamPlayer(
     }
 
     val state by player.stateFlow.collectAsState()
-    val availableQualities by player.availableQualities.collectAsState()
-    val currentQuality by player.currentQuality.collectAsState()
 
     // Propagate state changes to the caller.
     LaunchedEffect(state) { onState(state) }
@@ -232,7 +235,8 @@ fun BoomstreamPlayer(
     ) {
         when (val s = state) {
             is PlayerState.Idle, is PlayerState.Loading -> {
-                CircularProgressIndicator(color = Color.White)
+                val spinnerColor = style?.loaderColor?.let { Color(it) } ?: Color.White
+                CircularProgressIndicator(color = spinnerColor)
             }
             is PlayerState.Ready -> {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -244,6 +248,7 @@ fun BoomstreamPlayer(
                                 applyLiveControllerUi(s.isLive)
                                 setShowPreviousButton(s.navButtonsVisible())
                                 setShowNextButton(s.navButtonsVisible())
+                                style?.let { applyStyleToPlayerView(this, it) }
                                 setFullscreenButtonClickListener(
                                     if (onFullscreenToggle != null) {
                                         PlayerView.FullscreenButtonClickListener {
@@ -254,6 +259,12 @@ fun BoomstreamPlayer(
                                     } else {
                                         null
                                     }
+                                )
+                                // Intercept the settings button to show our unified sheet.
+                                interceptSettingsButton(
+                                    playerProvider = { player },
+                                    styleProvider = { style },
+                                    enableQualitySelectorProvider = { advancedOptions.enableQualitySelector },
                                 )
                             }
                         },
@@ -266,6 +277,8 @@ fun BoomstreamPlayer(
                             playerView.applyLiveControllerUi(s.isLive)
                             playerView.setShowPreviousButton(s.navButtonsVisible())
                             playerView.setShowNextButton(s.navButtonsVisible())
+                            // Re-apply style on each update (handles live style changes).
+                            style?.let { applyStyleToPlayerView(playerView, it) }
                             playerView.setFullscreenButtonClickListener(
                                 if (onFullscreenToggle != null) {
                                     PlayerView.FullscreenButtonClickListener {
@@ -277,6 +290,12 @@ fun BoomstreamPlayer(
                                     null
                                 }
                             )
+                            // Re-wire settings interceptor on each update to pick up latest style.
+                            playerView.interceptSettingsButton(
+                                playerProvider = { player },
+                                styleProvider = { style },
+                                enableQualitySelectorProvider = { advancedOptions.enableQualitySelector },
+                            )
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -285,64 +304,24 @@ fun BoomstreamPlayer(
                     s.systemMessage?.let { msg ->
                         var visible by remember(msg) { mutableStateOf(true) }
                         if (visible) {
+                            val msgTextColor = style?.messageTextColor?.let { Color(it) } ?: Color.White
+                            val msgBgColor = style?.messageBackgroundColor?.let { Color(it) }
+                                ?: Color(0xCC000000.toInt())
                             Text(
                                 text = msg,
-                                color = Color.White,
+                                color = msgTextColor,
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = TextAlign.Center,
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
                                     .fillMaxWidth()
-                                    .background(Color(0xCC000000.toInt()))
+                                    .background(msgBgColor)
                                     .padding(horizontal = 16.dp, vertical = 12.dp)
                                     .clickable { visible = false },
                             )
                         }
                     }
 
-                    // Optional quality selector (enabled via AdvancedPlayerOptions.enableQualitySelector).
-                    if (advancedOptions.enableQualitySelector && availableQualities.isNotEmpty()) {
-                        var menuExpanded by remember { mutableStateOf(false) }
-                        val qualityLabel = when (val q = currentQuality) {
-                            is VideoQuality.Auto -> "Auto"
-                            is VideoQuality.Resolution -> q.label
-                        }
-                        Box(modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)) {
-                            TextButton(
-                                onClick = { menuExpanded = true },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                            ) {
-                                Text(
-                                    text = qualityLabel,
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Auto") },
-                                    onClick = {
-                                        player.selectAuto()
-                                        menuExpanded = false
-                                    },
-                                )
-                                availableQualities.forEach { quality ->
-                                    if (quality is VideoQuality.Resolution) {
-                                        DropdownMenuItem(
-                                            text = { Text(quality.label) },
-                                            onClick = {
-                                                player.selectQuality(quality)
-                                                menuExpanded = false
-                                            },
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
             is PlayerState.PosterOnly -> {
@@ -354,15 +333,18 @@ fun BoomstreamPlayer(
                         modifier = Modifier.fillMaxSize(),
                     )
                     s.message?.let { msg ->
+                        val msgTextColor = style?.messageTextColor?.let { Color(it) } ?: Color.White
+                        val msgBgColor = style?.messageBackgroundColor?.let { Color(it) }
+                            ?: Color(0xCC000000.toInt())
                         Text(
                             text = msg,
-                            color = Color.White,
+                            color = msgTextColor,
                             style = MaterialTheme.typography.bodyMedium,
                             textAlign = TextAlign.Center,
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .fillMaxWidth()
-                                .background(Color(0xCC000000.toInt()))
+                                .background(msgBgColor)
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
                         )
                     }

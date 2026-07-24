@@ -53,6 +53,8 @@ class PublicApiReflectionTest {
         VideoQuality.Resolution::class.java,
         // Top-level @Composable fun BoomstreamPlayer(...) compiles to BoomstreamPlayerKt.
         Class.forName("com.boomstream.sdk.player.BoomstreamPlayerKt"),
+        // BoomstreamPlayerStyle — media3-free styling model (CSO constraint #1 gate).
+        BoomstreamPlayerStyle::class.java,
     )
 
     private val exoPlayerClass: Class<*> =

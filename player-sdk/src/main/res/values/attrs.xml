@@ -10,5 +10,26 @@
             <enum name="surface_view" value="0" />
             <enum name="texture_view" value="1" />
         </attr>
+
+        <!-- Tint of the loading spinner shown while buffering. -->
+        <attr name="boomstreamLoaderColor" format="color" />
+
+        <!-- Best-effort tint for playback control icons (play, pause, seek handle, nav buttons). -->
+        <attr name="boomstreamAccentColor" format="color" />
+
+        <!-- Colour of the played portion of the seek bar. -->
+        <attr name="boomstreamSeekBarPlayedColor" format="color" />
+
+        <!-- Colour of the scrubber thumb on the seek bar. -->
+        <attr name="boomstreamSeekBarScrubberColor" format="color" />
+
+        <!-- Colour of the buffered (pre-loaded) portion of the seek bar. -->
+        <attr name="boomstreamSeekBarBufferedColor" format="color" />
+
+        <!-- Text colour of the system-message overlay banner. -->
+        <attr name="boomstreamMessageTextColor" format="color" />
+
+        <!-- Background colour of the system-message overlay banner. Default: #CC000000. -->
+        <attr name="boomstreamMessageBackgroundColor" format="color" />
     </declare-styleable>
 </resources>

@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -48,7 +49,9 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.boomstream.example.MainViewModel
 import com.boomstream.sdk.api.Boomstream
+import com.boomstream.sdk.player.AdvancedPlayerOptions
 import com.boomstream.sdk.player.BoomstreamPlayer
+import com.boomstream.sdk.player.BoomstreamPlayerStyle
 import com.boomstream.sdk.player.BoomstreamSurfaceType
 import com.boomstream.sdk.player.PlayerEvent
 import com.boomstream.sdk.player.VideoQuality
@@ -75,6 +78,7 @@ fun PlayerDemoScreen(vm: MainViewModel) {
     // (local remember/rememberSaveable snapped back to the default because the tab is rebuilt).
     // The player is recreated on change via key(surfaceType).
     val surfaceType by vm.surfaceType.collectAsState()
+    val locale by vm.locale.collectAsState()
 
     // 70% trigger: auto-resets when selectedCode changes (remember key)
     var triggered70 by remember(selectedCode) { mutableStateOf(false) }
@@ -124,6 +128,7 @@ fun PlayerDemoScreen(vm: MainViewModel) {
             vm = vm,
             controller = controller,
             surfaceType = surfaceType,
+            locale = locale,
         )
         return
     }
@@ -162,6 +167,16 @@ fun PlayerDemoScreen(vm: MainViewModel) {
                     .aspectRatio(16f / 9f),
                 offlineCache = vm.offlineCache,
                 surfaceType = surfaceType,
+                locale = locale,
+                // Demo: Boomstream violet (#662BFF) applied to loader, accent, and seek bar.
+                // enableQualitySelector=true adds a Quality row to the settings panel (⚙).
+                advancedOptions = AdvancedPlayerOptions(enableQualitySelector = true),
+                style = BoomstreamPlayerStyle(
+                    loaderColor = Color(0xFF662BFF).toArgb(),
+                    accentColor = Color(0xFF662BFF).toArgb(),
+                    seekBarPlayedColor = Color(0xFF662BFF).toArgb(),
+                    seekBarScrubberColor = Color(0xFF662BFF).toArgb(),
+                ),
                 controller = controller,
                 // onFullscreenToggle is non-null so the built-in fullscreen button is shown.
                 // Orientation change is handled by the FullScreenChanged event collector above.
@@ -422,6 +437,7 @@ private fun FullscreenPlayerPane(
     vm: MainViewModel,
     controller: com.boomstream.sdk.player.BoomstreamPlayerController,
     surfaceType: BoomstreamSurfaceType,
+    locale: String,
 ) {
     val context = LocalContext.current
 
@@ -453,6 +469,7 @@ private fun FullscreenPlayerPane(
                 modifier = Modifier.fillMaxSize(),
                 offlineCache = vm.offlineCache,
                 surfaceType = surfaceType,
+                locale = locale,
                 controller = controller,
                 // Fullscreen button exits fullscreen — orientation handled by FullScreenChanged event.
                 onFullscreenToggle = {},

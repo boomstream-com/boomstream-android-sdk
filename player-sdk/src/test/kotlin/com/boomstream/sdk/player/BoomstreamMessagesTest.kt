@@ -98,6 +98,91 @@ class BoomstreamMessagesTest {
         )
     }
 
+    // ── Settings sheet keys ───────────────────────────────────────────────────
+
+    @Test
+    fun `resolve settings_speed in Russian`() {
+        assertEquals("Скорость", BoomstreamMessages.resolve("settings_speed", locale = "ru"))
+    }
+
+    @Test
+    fun `resolve settings_speed in English`() {
+        assertEquals("Speed", BoomstreamMessages.resolve("settings_speed", locale = "en"))
+    }
+
+    @Test
+    fun `resolve settings_audio in Russian`() {
+        assertEquals("Аудио", BoomstreamMessages.resolve("settings_audio", locale = "ru"))
+    }
+
+    @Test
+    fun `resolve settings_audio in English`() {
+        assertEquals("Audio", BoomstreamMessages.resolve("settings_audio", locale = "en"))
+    }
+
+    @Test
+    fun `resolve settings_quality in Russian`() {
+        assertEquals("Качество", BoomstreamMessages.resolve("settings_quality", locale = "ru"))
+    }
+
+    @Test
+    fun `resolve settings_quality in English`() {
+        assertEquals("Quality", BoomstreamMessages.resolve("settings_quality", locale = "en"))
+    }
+
+    @Test
+    fun `resolve settings_speed_normal in Russian`() {
+        assertEquals("Обычная (1×)", BoomstreamMessages.resolve("settings_speed_normal", locale = "ru"))
+    }
+
+    @Test
+    fun `resolve settings_speed_normal in English`() {
+        assertEquals("Normal (1×)", BoomstreamMessages.resolve("settings_speed_normal", locale = "en"))
+    }
+
+    @Test
+    fun `resolve settings_quality_auto in Russian`() {
+        assertEquals("Авто", BoomstreamMessages.resolve("settings_quality_auto", locale = "ru"))
+    }
+
+    @Test
+    fun `resolve settings_quality_auto in English`() {
+        assertEquals("Auto", BoomstreamMessages.resolve("settings_quality_auto", locale = "en"))
+    }
+
+    @Test
+    fun `settings keys fall back to English for unknown locale`() {
+        assertEquals("Speed", BoomstreamMessages.resolve("settings_speed", locale = "de"))
+        assertEquals("Audio", BoomstreamMessages.resolve("settings_audio", locale = "de"))
+        assertEquals("Quality", BoomstreamMessages.resolve("settings_quality", locale = "de"))
+    }
+
+    @Test
+    fun `resolve subtitles_title in Russian`() {
+        assertEquals("Субтитры", BoomstreamMessages.resolve("subtitles_title", locale = "ru"))
+    }
+
+    @Test
+    fun `resolve subtitles_title in English`() {
+        assertEquals("Subtitles", BoomstreamMessages.resolve("subtitles_title", locale = "en"))
+    }
+
+    @Test
+    fun `resolve subtitles_off in Russian`() {
+        assertEquals("Выкл.", BoomstreamMessages.resolve("subtitles_off", locale = "ru"))
+    }
+
+    @Test
+    fun `resolve subtitles_off in English`() {
+        assertEquals("Off", BoomstreamMessages.resolve("subtitles_off", locale = "en"))
+    }
+
+    @Test
+    fun `subtitles keys fall back to English for unknown locale`() {
+        assertEquals("Subtitles", BoomstreamMessages.resolve("subtitles_title", locale = "de"))
+        assertEquals("Off", BoomstreamMessages.resolve("subtitles_off", locale = "de"))
+    }
+
     // ── accessRestricted integration: prefer locale, fallback to translate ────
 
     @Test

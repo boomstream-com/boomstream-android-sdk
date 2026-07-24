@@ -2,6 +2,7 @@
 
 Full reference for programmatic player observation and control in `player-sdk` v1.2.0+.
 Video quality selection was added in v1.5.0 (see [Video quality selection](#video-quality-selection)).
+Player styling / theming was added in v1.6.0 (see [Styling / theming](#styling--theming)).
 
 - [Controller](#controller)
   - [Compose path](#compose-path)
@@ -16,6 +17,7 @@ Video quality selection was added in v1.5.0 (see [Video quality selection](#vide
 - [Web → Native mapping](#web--native-mapping)
 - [Surface type (SurfaceView vs TextureView)](#surface-type-surfaceview-vs-textureview)
 - [Video quality selection](#video-quality-selection)
+- [Styling / theming](#styling--theming)
 - [Backward compatibility](#backward-compatibility)
 
 ---
@@ -332,7 +334,7 @@ attribute on `BoomstreamPlayerView` needs no such care — it is re-read on ever
 _Available in `player-sdk` v1.5.0+._
 
 The controller exposes the HLS renditions discovered from the master manifest for programmatic
-selection, plus an opt-in built-in UI button.
+selection, plus an opt-in Quality row in the built-in settings panel.
 
 ### Model
 
@@ -365,7 +367,7 @@ The type is intentionally **media3-free** — no `androidx.media3.common.Format`
 
 `availableQualities` reflects **only** the renditions the server advertises in the HLS master
 manifest — it does not manufacture options. For a single-rendition stream the list stays
-empty and the built-in quality button (if enabled) is hidden.
+empty and the Quality row in the settings panel (if enabled) is hidden.
 
 ### Reading available options
 
@@ -409,11 +411,12 @@ LaunchedEffect(controller) {
 }
 ```
 
-### Built-in quality selector button (opt-in)
+### Quality in the player settings panel (opt-in)
 
-Set `AdvancedPlayerOptions.enableQualitySelector = true` to render a quality-selection button in
-the built-in player controls overlay. The button opens a menu of `availableQualities`; picking a
-row calls `selectQuality` / `selectAuto` under the hood.
+The player's gear button (⚙) opens a unified settings panel containing **Speed** and, when
+multiple audio tracks are present, **Audio**. Set `AdvancedPlayerOptions.enableQualitySelector = true`
+to add a **Quality** row to that same panel. There is no separate quality button — everything lives
+behind one gear icon, which is what the client requested.
 
 ```kotlin
 // Compose
@@ -431,8 +434,112 @@ playerView.load(
 )
 ```
 
-The default is `false` — only the programmatic API is exposed. The button auto-hides for streams
-whose master manifest advertises a single rendition (`availableQualities` stays empty).
+The default is `false` — only the programmatic API is exposed. The Quality row is hidden
+automatically when the HLS master manifest contains a single rendition (`availableQualities`
+stays empty).
+
+---
+
+## Styling / theming
+
+_Available in `player-sdk` v1.6.0+._
+
+Pass a `BoomstreamPlayerStyle` to control the visual appearance of the player. All fields are
+nullable — `null` keeps the SDK default for that colour.
+
+### Style model
+
+```kotlin
+class BoomstreamPlayerStyle(
+    @ColorInt val loaderColor: Int? = null,           // loading spinner tint
+    @ColorInt val accentColor: Int? = null,           // control buttons (best-effort)
+    @ColorInt val seekBarPlayedColor: Int? = null,    // played portion of the seek bar
+    @ColorInt val seekBarScrubberColor: Int? = null,  // seek bar thumb
+    @ColorInt val seekBarBufferedColor: Int? = null,  // buffered portion of the seek bar
+    @ColorInt val messageTextColor: Int? = null,      // system-message overlay text
+    @ColorInt val messageBackgroundColor: Int? = null // system-message overlay background
+)
+```
+
+All colours use `@ColorInt Int` — no `androidx.media3.*` types are exposed (CSO constraint #1).
+
+**Accent note:** `accentColor` is applied best-effort to Media3 playback control button icons
+(play, pause, previous, next, fast-forward, rewind, settings, fullscreen). Coverage depends on
+the Media3 version and the host app's theme — some tints may be overridden by the theme's
+`colorControlNormal`.
+
+### Compose — `style` parameter
+
+```kotlin
+val brandViolet = Color(0xFF662BFF).toArgb()
+
+BoomstreamPlayer(
+    mediaCode = "Il4lNOfL",
+    configClient = Boomstream.configClient,
+    style = BoomstreamPlayerStyle(
+        loaderColor = brandViolet,
+        accentColor = brandViolet,
+        seekBarPlayedColor = brandViolet,
+        seekBarScrubberColor = brandViolet,
+    ),
+)
+```
+
+Compose callers convert `androidx.compose.ui.graphics.Color` values via `.toArgb()`.
+
+### View — XML attributes
+
+```xml
+<com.boomstream.sdk.player.BoomstreamPlayerView
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/player"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    app:boomstreamLoaderColor="@color/brand_violet"
+    app:boomstreamAccentColor="@color/brand_violet"
+    app:boomstreamSeekBarPlayedColor="@color/brand_violet"
+    app:boomstreamSeekBarScrubberColor="@color/brand_violet"
+    app:boomstreamMessageTextColor="@android:color/white"
+    app:boomstreamMessageBackgroundColor="#CC000000" />
+```
+
+### View — programmatic
+
+Set the `style` property (replaces the whole style object) or use the point-change setters
+(preserve all other fields):
+
+```kotlin
+val player = findViewById<BoomstreamPlayerView>(R.id.player)
+
+// Replace entire style:
+player.style = BoomstreamPlayerStyle(
+    loaderColor = ContextCompat.getColor(this, R.color.brand_violet),
+    accentColor = ContextCompat.getColor(this, R.color.brand_violet),
+)
+
+// Point change (preserves other style fields):
+player.setLoaderColor(ContextCompat.getColor(this, R.color.brand_violet))
+player.setAccentColor(ContextCompat.getColor(this, R.color.brand_violet))
+player.setSeekBarPlayedColor(ContextCompat.getColor(this, R.color.brand_violet))
+player.setSeekBarScrubberColor(ContextCompat.getColor(this, R.color.brand_violet))
+player.setSeekBarBufferedColor(ContextCompat.getColor(this, R.color.brand_buffered))
+player.setMessageTextColor(Color.WHITE)
+player.setMessageBackgroundColor(Color.argb(0xCC, 0, 0, 0))
+```
+
+Style changes apply immediately — no reload required. The style survives `surfaceType` toggles.
+
+### XML attribute reference
+
+| Attribute | Surfaces | Notes |
+|---|---|---|
+| `boomstreamLoaderColor` | Loading spinner | Full control via `ProgressBar.indeterminateTintList` |
+| `boomstreamAccentColor` | Control button icons | Best-effort icon tint |
+| `boomstreamSeekBarPlayedColor` | Seek bar played portion | Media3 `DefaultTimeBar.setPlayedColor` |
+| `boomstreamSeekBarScrubberColor` | Seek bar thumb | Media3 `DefaultTimeBar.setScrubberColor` |
+| `boomstreamSeekBarBufferedColor` | Seek bar buffered portion | Media3 `DefaultTimeBar.setBufferedColor` |
+| `boomstreamMessageTextColor` | Overlay banner text | Full control |
+| `boomstreamMessageBackgroundColor` | Overlay banner background | Full control; default `#CC000000` |
 
 ---
 

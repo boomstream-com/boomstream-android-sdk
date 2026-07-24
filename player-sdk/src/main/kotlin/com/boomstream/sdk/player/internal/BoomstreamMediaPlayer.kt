@@ -8,8 +8,10 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.cache.CacheDataSource
@@ -72,7 +74,7 @@ internal class BoomstreamMediaPlayer(
     private val offlineCache: BoomstreamOfflineCache? = null,
     /** BCP 47-style locale tag used to select system message translations ("ru", "en", …).
      *  `null` falls back to the server-supplied `translate` field. */
-    private val locale: String? = null,
+    internal val locale: String? = null,
 ) : DefaultLifecycleObserver {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -104,6 +106,26 @@ internal class BoomstreamMediaPlayer(
 
     private val _currentQuality = MutableStateFlow<VideoQuality>(VideoQuality.Auto)
     internal val currentQuality: StateFlow<VideoQuality> = _currentQuality
+
+    // ── Playback speed ────────────────────────────────────────────────────────
+    private val _playbackSpeed = MutableStateFlow(1.0f)
+    internal val playbackSpeed: StateFlow<Float> = _playbackSpeed
+
+    // ── Audio tracks (HLS multi-audio) ────────────────────────────────────────
+    private val _availableAudioTracks = MutableStateFlow<List<AudioTrackInfo>>(emptyList())
+    internal val availableAudioTracks: StateFlow<List<AudioTrackInfo>> = _availableAudioTracks
+
+    private val _currentAudioTrack = MutableStateFlow<AudioTrackInfo?>(null)
+    internal val currentAudioTrack: StateFlow<AudioTrackInfo?> = _currentAudioTrack
+
+    // ── Subtitle tracks (HLS WEBVTT text tracks) ──────────────────────────────
+    private val _availableSubtitleTracks = MutableStateFlow<List<SubtitleTrackInfo>>(emptyList())
+    internal val availableSubtitleTracks: StateFlow<List<SubtitleTrackInfo>> = _availableSubtitleTracks
+
+    private val _currentSubtitleTrack = MutableStateFlow<SubtitleTrackInfo?>(null)
+    internal val currentSubtitleTrack: StateFlow<SubtitleTrackInfo?> = _currentSubtitleTrack
+
+    private var lastKnownTracks: Tracks? = null
 
     private var progressJob: Job? = null
     private var _isFullScreen = false
@@ -280,10 +302,17 @@ internal class BoomstreamMediaPlayer(
                 )
             )
 
-            // Listener 3: track-change detector — populates _availableQualities from HLS variants.
+            // Listener 3: track-change detector — populates qualities, audio, and subtitle tracks.
             player.addListener(object : Player.Listener {
                 override fun onTracksChanged(tracks: Tracks) {
+                    lastKnownTracks = tracks
                     _availableQualities.value = buildQualityList(tracks)
+                    val audioList = buildAudioTrackList(tracks)
+                    _availableAudioTracks.value = audioList
+                    _currentAudioTrack.value = detectCurrentAudioTrack(tracks, audioList)
+                    val subtitleList = buildSubtitleTrackList(tracks)
+                    _availableSubtitleTracks.value = subtitleList
+                    _currentSubtitleTrack.value = detectCurrentSubtitleTrack(tracks, subtitleList)
                 }
             })
         }
@@ -301,12 +330,22 @@ internal class BoomstreamMediaPlayer(
         _state.value = PlayerState.Loading
         exoPlayer.stop()
         exoPlayer.clearMediaItems()
-        // Reset quality state for the new media item.
+        // Reset quality, speed, audio, and subtitle track state for the new media item.
         _availableQualities.value = emptyList()
         _currentQuality.value = VideoQuality.Auto
+        _availableAudioTracks.value = emptyList()
+        _currentAudioTrack.value = null
+        _availableSubtitleTracks.value = emptyList()
+        _currentSubtitleTrack.value = null
+        lastKnownTracks = null
+        _playbackSpeed.value = 1.0f
+        exoPlayer.setPlaybackSpeed(1.0f)
         exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
             .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
             .setMaxVideoBitrate(Int.MAX_VALUE)
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
             .build()
         startProgressPolling()
         fetchJob = scope.launch {
@@ -441,6 +480,12 @@ internal class BoomstreamMediaPlayer(
         playlistItems = emptyList()
         _availableQualities.value = emptyList()
         _currentQuality.value = VideoQuality.Auto
+        _availableAudioTracks.value = emptyList()
+        _currentAudioTrack.value = null
+        _availableSubtitleTracks.value = emptyList()
+        _currentSubtitleTrack.value = null
+        lastKnownTracks = null
+        _playbackSpeed.value = 1.0f
         exoPlayer.release()
         _state.value = PlayerState.Idle
         _progressFlow.value = PlaybackProgress(0L, -1L, 0f)
@@ -529,6 +574,53 @@ internal class BoomstreamMediaPlayer(
     }
 
     internal fun selectAuto() = selectQuality(VideoQuality.Auto)
+
+    /** Sets ExoPlayer playback speed. [speed] is clamped to [0.25, 2.0]. */
+    internal fun setPlaybackSpeed(speed: Float) {
+        val clamped = speed.coerceIn(0.25f, 2.0f)
+        exoPlayer.setPlaybackSpeed(clamped)
+        _playbackSpeed.value = clamped
+    }
+
+    /**
+     * Forces playback of the given [AudioTrackInfo]. Clears any previous audio override first.
+     * No-op if the corresponding track group is no longer present in [lastKnownTracks].
+     */
+    internal fun selectAudioTrack(info: AudioTrackInfo) {
+        val tracks = lastKnownTracks ?: return
+        val group = tracks.groups.getOrNull(info.groupIndex) ?: return
+        val override = TrackSelectionOverride(group.mediaTrackGroup, listOf(info.trackIndex))
+        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+            .addOverride(override)
+            .build()
+        _currentAudioTrack.value = info
+    }
+
+    /**
+     * Forces playback of the given [SubtitleTrackInfo]. Clears any previous text override first.
+     * No-op if the corresponding track group is no longer present in [lastKnownTracks].
+     */
+    internal fun selectSubtitleTrack(info: SubtitleTrackInfo) {
+        val tracks = lastKnownTracks ?: return
+        val group = tracks.groups.getOrNull(info.groupIndex) ?: return
+        val override = TrackSelectionOverride(group.mediaTrackGroup, listOf(info.trackIndex))
+        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .addOverride(override)
+            .build()
+        _currentSubtitleTrack.value = info
+    }
+
+    /** Clears any active subtitle override, disabling subtitle display. */
+    internal fun clearSubtitleTrack() {
+        exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+            .build()
+        _currentSubtitleTrack.value = null
+    }
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
@@ -658,6 +750,48 @@ private fun bestPosterUrl(posters: List<com.boomstream.sdk.api.model.Poster>): S
  * height are collapsed to one entry (keeping the first seen, which is typically the lower-bitrate
  * variant for identical-height codec ladders).
  */
+/**
+ * Audio track descriptor used by [BoomstreamSettingsSheet].
+ *
+ * Holds the [Tracks] indices so [BoomstreamMediaPlayer.selectAudioTrack] can build a
+ * [TrackSelectionOverride] without re-scanning the track list.
+ */
+internal data class AudioTrackInfo(
+    val groupIndex: Int,
+    val trackIndex: Int,
+    val label: String,
+)
+
+/** Builds a flat list of all audio renditions found in [tracks]. */
+private fun buildAudioTrackList(tracks: Tracks): List<AudioTrackInfo> {
+    val result = mutableListOf<AudioTrackInfo>()
+    tracks.groups.forEachIndexed { groupIndex, group ->
+        if (group.type != C.TRACK_TYPE_AUDIO) return@forEachIndexed
+        for (trackIndex in 0 until group.length) {
+            val format = group.getTrackFormat(trackIndex)
+            val label = format.label?.takeIf { it.isNotBlank() }
+                ?: format.language?.uppercase()
+                ?: "Audio ${result.size + 1}"
+            result.add(AudioTrackInfo(groupIndex, trackIndex, label))
+        }
+    }
+    return result
+}
+
+/** Returns the [AudioTrackInfo] whose track is currently selected, or the first entry when none match. */
+private fun detectCurrentAudioTrack(tracks: Tracks, audioList: List<AudioTrackInfo>): AudioTrackInfo? {
+    if (audioList.isEmpty()) return null
+    tracks.groups.forEachIndexed { groupIndex, group ->
+        if (group.type != C.TRACK_TYPE_AUDIO) return@forEachIndexed
+        for (trackIndex in 0 until group.length) {
+            if (group.isTrackSelected(trackIndex)) {
+                return audioList.find { it.groupIndex == groupIndex && it.trackIndex == trackIndex }
+            }
+        }
+    }
+    return audioList.first()
+}
+
 private fun buildQualityList(tracks: Tracks): List<VideoQuality.Resolution> {
     val seen = mutableSetOf<Int>()
     return tracks.groups
@@ -673,4 +807,59 @@ private fun buildQualityList(tracks: Tracks): List<VideoQuality.Resolution> {
             }
         }
         .sortedByDescending { it.height }
+}
+
+/**
+ * Subtitle (text-track) descriptor used by [BoomstreamSettingsSheet].
+ *
+ * Holds the [Tracks] indices so [BoomstreamMediaPlayer.selectSubtitleTrack] can build a
+ * [TrackSelectionOverride] without re-scanning the track list.
+ */
+internal data class SubtitleTrackInfo(
+    val groupIndex: Int,
+    val trackIndex: Int,
+    val label: String,
+)
+
+// CEA-608/CEA-708 are closed-caption tracks that ExoPlayer surfaces automatically from
+// muxed HLS streams. They carry no displayable subtitles and must not appear in the UI.
+private val PHANTOM_CAPTION_MIME_TYPES = setOf(
+    MimeTypes.APPLICATION_CEA608,
+    MimeTypes.APPLICATION_CEA708,
+)
+
+/** Builds a flat list of real subtitle renditions found in [tracks] (TRACK_TYPE_TEXT),
+ * excluding CEA-608/CEA-708 closed-caption tracks injected by ExoPlayer from muxed HLS. */
+internal fun buildSubtitleTrackList(tracks: Tracks): List<SubtitleTrackInfo> {
+    val result = mutableListOf<SubtitleTrackInfo>()
+    tracks.groups.forEachIndexed { groupIndex, group ->
+        if (group.type != C.TRACK_TYPE_TEXT) return@forEachIndexed
+        for (trackIndex in 0 until group.length) {
+            val format = group.getTrackFormat(trackIndex)
+            if (format.sampleMimeType in PHANTOM_CAPTION_MIME_TYPES) continue
+            if (!group.isTrackSupported(trackIndex)) continue
+            val label = format.label?.takeIf { it.isNotBlank() }
+                ?: format.language?.uppercase()
+                ?: "Subtitle ${result.size + 1}"
+            result.add(SubtitleTrackInfo(groupIndex, trackIndex, label))
+        }
+    }
+    return result
+}
+
+/**
+ * Returns the [SubtitleTrackInfo] whose track is currently selected, or `null` when no text
+ * track is actively selected (i.e. subtitles are off).
+ */
+internal fun detectCurrentSubtitleTrack(tracks: Tracks, subtitleList: List<SubtitleTrackInfo>): SubtitleTrackInfo? {
+    if (subtitleList.isEmpty()) return null
+    tracks.groups.forEachIndexed { groupIndex, group ->
+        if (group.type != C.TRACK_TYPE_TEXT) return@forEachIndexed
+        for (trackIndex in 0 until group.length) {
+            if (group.isTrackSelected(trackIndex)) {
+                return subtitleList.find { it.groupIndex == groupIndex && it.trackIndex == trackIndex }
+            }
+        }
+    }
+    return null
 }

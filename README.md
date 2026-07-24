@@ -33,9 +33,9 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.boomstream:player-sdk:1.5.0")
-    implementation("com.boomstream:api-sdk:1.5.0")
-    implementation("com.boomstream:offline-sdk:1.5.0") // опционально — только если нужны offline-загрузки
+    implementation("com.boomstream:player-sdk:1.6.0")
+    implementation("com.boomstream:api-sdk:1.6.0")
+    implementation("com.boomstream:offline-sdk:1.6.0") // опционально — только если нужны offline-загрузки
 }
 ```
 
@@ -103,7 +103,7 @@ example-app ──► player-sdk, offline-sdk, api-sdk
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.5.0")
+implementation("com.boomstream:player-sdk:1.6.0")
 ```
 
 ### Jetpack Compose
@@ -242,7 +242,7 @@ BoomstreamPlayer(
     mediaCode = "Il4lNOfL",
     configClient = Boomstream.configClient,
     controller = controller,
-    // Опционально: встроенная кнопка выбора качества в контролах плеера (по умолчанию off)
+    // Опционально: строка «Качество» в панели настроек ⚙ (по умолчанию off)
     advancedOptions = AdvancedPlayerOptions(enableQualitySelector = true),
 )
 
@@ -262,6 +262,43 @@ LaunchedEffect(controller) {
 Варианты качества берутся из HLS master-манифеста и появляются после первого track-ready события
 (до этого `availableQualities` — пустой список). Подробности —
 [docs/PLAYER-API.md → Video quality selection](docs/PLAYER-API.md#video-quality-selection).
+
+### Styling / theming
+
+Начиная с v1.6.0, визуальные параметры плеера выносятся через `BoomstreamPlayerStyle`.
+
+```kotlin
+// Compose — передаётся через параметр style
+BoomstreamPlayer(
+    mediaCode = "Il4lNOfL",
+    configClient = Boomstream.configClient,
+    style = BoomstreamPlayerStyle(
+        loaderColor    = Color(0xFF662BFF).toArgb(), // цвет спиннера загрузки
+        accentColor    = Color(0xFF662BFF).toArgb(), // иконки кнопок (best-effort)
+        seekBarPlayedColor   = Color(0xFF662BFF).toArgb(),
+        seekBarScrubberColor = Color(0xFF662BFF).toArgb(),
+    ),
+)
+```
+
+```xml
+<!-- View — XML-атрибуты на BoomstreamPlayerView -->
+<com.boomstream.sdk.player.BoomstreamPlayerView
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    app:boomstreamLoaderColor="@color/brand_violet"
+    app:boomstreamAccentColor="@color/brand_violet"
+    app:boomstreamSeekBarPlayedColor="@color/brand_violet"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content" />
+```
+
+```kotlin
+// View — программная установка (применяется вживую, без перезагрузки)
+player.setLoaderColor(ContextCompat.getColor(this, R.color.brand_violet))
+player.setAccentColor(ContextCompat.getColor(this, R.color.brand_violet))
+```
+
+Полный список атрибутов и поведение — [docs/PLAYER-API.md → Styling / theming](docs/PLAYER-API.md#styling--theming).
 
 ### Offline playback
 
@@ -284,7 +321,7 @@ BoomstreamPlayer(
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:offline-sdk:1.5.0")
+implementation("com.boomstream:offline-sdk:1.6.0")
 ```
 
 ### Инициализация
@@ -334,7 +371,7 @@ offlineManager.getDownloadState("Il4lNOfL").collect { state ->
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:api-sdk:1.5.0")
+implementation("com.boomstream:api-sdk:1.6.0")
 ```
 
 ### Использование Boomstream API
@@ -532,9 +569,9 @@ dependencyResolutionManagement {
 **2. Add the dependencies** to `app/build.gradle.kts`:
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.5.0")
-implementation("com.boomstream:api-sdk:1.5.0")
-implementation("com.boomstream:offline-sdk:1.5.0") // optional
+implementation("com.boomstream:player-sdk:1.6.0")
+implementation("com.boomstream:api-sdk:1.6.0")
+implementation("com.boomstream:offline-sdk:1.6.0") // optional
 ```
 
 **3. Initialize** in `Application.onCreate()`:
@@ -610,7 +647,7 @@ BoomstreamPlayer(
     mediaCode = "Il4lNOfL",
     configClient = Boomstream.configClient,
     controller = controller,
-    // Optional: built-in quality-selector button in the player controls overlay (default off)
+    // Optional: "Quality" row in the player settings panel ⚙ (default off)
     advancedOptions = AdvancedPlayerOptions(enableQualitySelector = true),
 )
 controller.selectQuality(VideoQuality.Resolution(height = 720))
@@ -618,8 +655,47 @@ controller.selectAuto()
 // Full reference — see docs/PLAYER-API.md
 ```
 
-For programmatic playback control, event observation, and video quality selection —
+For programmatic playback control, event observation, quality selection, and styling —
 see [docs/PLAYER-API.md](docs/PLAYER-API.md).
+
+### Styling / theming
+
+Available in v1.6.0+. Pass `BoomstreamPlayerStyle` to customise the player's visual appearance. All fields are nullable — `null` keeps the SDK default for that colour.
+
+```kotlin
+// Compose — style parameter
+val brandViolet = Color(0xFF662BFF).toArgb()
+BoomstreamPlayer(
+    mediaCode = "Il4lNOfL",
+    configClient = Boomstream.configClient,
+    style = BoomstreamPlayerStyle(
+        loaderColor          = brandViolet,
+        accentColor          = brandViolet,   // control button tint (best-effort)
+        seekBarPlayedColor   = brandViolet,
+        seekBarScrubberColor = brandViolet,
+    ),
+)
+```
+
+```xml
+<!-- View — XML attributes -->
+<com.boomstream.sdk.player.BoomstreamPlayerView
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    app:boomstreamLoaderColor="@color/brand_violet"
+    app:boomstreamAccentColor="@color/brand_violet"
+    app:boomstreamSeekBarPlayedColor="@color/brand_violet"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content" />
+```
+
+```kotlin
+// View — programmatic (applies immediately, no reload needed)
+player.setLoaderColor(ContextCompat.getColor(this, R.color.brand_violet))
+player.setAccentColor(ContextCompat.getColor(this, R.color.brand_violet))
+player.setSeekBarPlayedColor(ContextCompat.getColor(this, R.color.brand_violet))
+```
+
+Full field reference — [docs/PLAYER-API.md → Styling / theming](docs/PLAYER-API.md#styling--theming).
 
 ### offline-sdk
 

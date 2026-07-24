@@ -22,11 +22,15 @@ package com.boomstream.sdk.player
  * @param bufferForPlaybackMs   Buffer required after an under-run before resuming playback (ms).
  *                              Default 2 500 ms.
  * @param bufferForPlaybackAfterRebufferMs Buffer target after a rebuffer event (ms). Default 5 000 ms.
- * @param enableQualitySelector When `true`, a quality-selection button is rendered in the player
- *                              controls overlay. The button opens a menu of available renditions
- *                              discovered from the HLS master manifest via
- *                              [BoomstreamPlayerController.availableQualities].
- *                              When `false` (default), only the programmatic API is exposed.
+ * @param enableQualitySelector When `true`, a **Quality** row is added to the player settings
+ *                              panel (the gear icon, ⚙). The panel already contains Speed and
+ *                              Audio options; this flag controls whether Quality appears alongside
+ *                              them. Tapping a quality row calls [BoomstreamPlayerController.selectQuality]
+ *                              or [BoomstreamPlayerController.selectAuto] under the hood.
+ *
+ *                              When `false` (default), Quality is absent from the settings panel.
+ *                              The programmatic [BoomstreamPlayerController] API remains available
+ *                              regardless of this flag.
  */
 class AdvancedPlayerOptions @JvmOverloads constructor(
     val minBufferMs: Int = 15_000,

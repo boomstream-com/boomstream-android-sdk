@@ -13,6 +13,8 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub Release from CHANGELOG after a successful publish
     environment: maven-central
     steps:
       - uses: actions/checkout@v4
@@ -113,6 +115,25 @@ jobs:
             esac
           done
           echo "Timed out waiting for PUBLISHED"; exit 1
+
+      # Only reached once the artifacts are live on Central. Turns the bare tag into a
+      # GitHub Release whose notes are the matching CHANGELOG.md section, so the Releases
+      # page shows what changed per version. Metadata only — does not touch Maven.
+      - name: Publish GitHub Release with changelog notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk "/^## \\[${VERSION}\\]/{f=1;next} /^## \\[/{if(f)exit} f" CHANGELOG.md \
+            | sed -e 's/^-\{3,\}[[:space:]]*$//' > notes.md
+          if [ ! -s notes.md ]; then
+            echo "See CHANGELOG.md for changes in ${GITHUB_REF_NAME}." > notes.md
+          fi
+          gh release create "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file notes.md \
+            --verify-tag
 
       - name: Save bundle on failure
         if: failure()

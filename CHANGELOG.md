@@ -7,6 +7,47 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.6.0] — 2026-07-24
+
+### Changed
+
+- **Quality selector moved into the player settings panel** (`player-sdk`) — the standalone
+  quality button/overlay (`TOP|END` position) has been removed. Quality now appears as a row in
+  the unified settings panel opened by the gear icon (⚙), alongside Speed and Audio. Set
+  `AdvancedPlayerOptions.enableQualitySelector = true` to enable the Quality row; when `false`
+  (default) behaviour is unchanged — only the programmatic API is exposed.
+  The settings panel is implemented via `BoomstreamSettingsSheet` (internal) and is themed by
+  `BoomstreamPlayerStyle.accentColor`. Applies equally to the View (`BoomstreamPlayerView`)
+  and Compose (`BoomstreamPlayer`) paths.
+
+### Added
+
+- **Player styling API** (`player-sdk`) — integrators can now customise the visual appearance of the
+  player without touching Media3 internals. New public type:
+  - **`BoomstreamPlayerStyle`** — media3-free, all-nullable colour model (CSO constraint #1).
+    Fields: `loaderColor`, `accentColor`, `seekBarPlayedColor`, `seekBarScrubberColor`,
+    `seekBarBufferedColor`, `messageTextColor`, `messageBackgroundColor`.
+    `null` on any field keeps the SDK default (no visible change).
+  - **`BoomstreamPlayerView.style`** property — set once or change at runtime; applies
+    immediately, survives `surfaceType` toggles.
+  - **Point-change setters** on `BoomstreamPlayerView`: `setLoaderColor()`, `setAccentColor()`,
+    `setSeekBarPlayedColor()`, `setSeekBarScrubberColor()`, `setSeekBarBufferedColor()`,
+    `setMessageTextColor()`, `setMessageBackgroundColor()`.
+  - **XML attributes** on `BoomstreamPlayerView`: `boomstreamLoaderColor`, `boomstreamAccentColor`,
+    `boomstreamSeekBarPlayedColor`, `boomstreamSeekBarScrubberColor`,
+    `boomstreamSeekBarBufferedColor`, `boomstreamMessageTextColor`,
+    `boomstreamMessageBackgroundColor`.
+  - **`BoomstreamPlayer` `style` parameter** (Compose) — same `BoomstreamPlayerStyle` object;
+    Compose callers convert `Color` values via `.toArgb()`.
+  - **Accent note:** `accentColor` is best-effort — it tints the Media3 control-button image
+    views; exact coverage depends on the Media3 version and device theme.
+  - **Reflection guard:** `BoomstreamPlayerStyle` is added to `PublicApiReflectionTest` and
+    `ConstraintOneReflectionTest` coverage.
+  - **example-app demo:** player rendered with Boomstream violet `#662BFF` for loader, accent,
+    and seek bar.
+
+---
+
 ## [1.5.0] — 2026-07-22
 
 ### Added

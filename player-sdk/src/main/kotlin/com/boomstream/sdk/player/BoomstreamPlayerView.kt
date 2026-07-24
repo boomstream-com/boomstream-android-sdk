@@ -1,15 +1,17 @@
 package com.boomstream.sdk.player
 
 import android.content.Context
+import android.content.res.ColorStateList
+import android.content.res.TypedArray
 import android.graphics.Color
 import android.util.AttributeSet
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.PopupMenu
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.annotation.ColorInt
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.media3.ui.PlayerView
@@ -19,7 +21,9 @@ import com.boomstream.sdk.api.internal.InternalBoomstreamApi
 import com.boomstream.sdk.api.internal.UserAgentTokenProvider
 import com.boomstream.sdk.player.internal.BoomstreamMediaPlayer
 import com.boomstream.sdk.player.internal.applyLiveControllerUi
+import com.boomstream.sdk.player.internal.applyStyleToPlayerView
 import com.boomstream.sdk.player.internal.inflatePlayerView
+import com.boomstream.sdk.player.internal.interceptSettingsButton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,7 +33,6 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -92,6 +95,34 @@ class BoomstreamPlayerView @JvmOverloads constructor(
     private var mediaPlayer: BoomstreamMediaPlayer? = null
     private var observerScope: CoroutineScope? = null
 
+    // ── Style ──────────────────────────────────────────────────────────────────
+
+    // Declared before child views so readStyleAttrs() runs first, but applyStyle() is called
+    // from an init block after all child views have been initialised.
+    private var _style: BoomstreamPlayerStyle = readStyleAttrs(context, attrs)
+
+    /**
+     * Visual style overrides for this player view.
+     *
+     * Setting this property after [load] applies the colours immediately (the player does not
+     * need to be reloaded). A `null` field in [BoomstreamPlayerStyle] leaves the corresponding
+     * colour unchanged.
+     *
+     * The style survives [surfaceType] changes — it is re-applied to the new internal
+     * [PlayerView] transparently.
+     *
+     * For a single-colour point change prefer the convenience setters ([setLoaderColor],
+     * [setAccentColor], [setSeekBarPlayedColor], [setSeekBarScrubberColor],
+     * [setSeekBarBufferedColor], [setMessageTextColor], [setMessageBackgroundColor]) which
+     * preserve all other fields.
+     */
+    var style: BoomstreamPlayerStyle
+        get() = _style
+        set(value) {
+            _style = value
+            applyStyle(value)
+        }
+
     // ── Surface backing ─────────────────────────────────────────────────────────
 
     // Initialised before [playerView] below so the first PlayerView is inflated with the right
@@ -124,6 +155,8 @@ class BoomstreamPlayerView @JvmOverloads constructor(
             fresh.player = attachedPlayer
             // Restore the visibility that matches the current state on the fresh view.
             applyState(_stateFlow.value)
+            // Re-apply styling to the freshly inflated PlayerView.
+            applyStyleToPlayerView(fresh, _style)
         }
 
     // ── Child views ────────────────────────────────────────────────────────────
@@ -158,6 +191,64 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         })
     }
 
+    // Apply XML-derived style now that all child views are initialised.
+    init { applyStyle(_style) }
+
+    // ── Style convenience setters ──────────────────────────────────────────────
+
+    /**
+     * Sets the loading spinner tint and applies it immediately.
+     *
+     * Equivalent to `style = BoomstreamPlayerStyle(loaderColor = color, …rest unchanged…)`.
+     *
+     * @param color `@ColorInt` tint colour for the indeterminate [android.widget.ProgressBar].
+     */
+    fun setLoaderColor(@ColorInt color: Int) { style = style.withLoaderColor(color) }
+
+    /**
+     * Sets the best-effort accent tint for Media3 control buttons and applies it immediately.
+     *
+     * Coverage depends on the Media3 version and active device theme — see [BoomstreamPlayerStyle.accentColor].
+     *
+     * @param color `@ColorInt` tint applied to play, pause, seek, and navigation icon views.
+     */
+    fun setAccentColor(@ColorInt color: Int) { style = style.withAccentColor(color) }
+
+    /**
+     * Sets the seek bar played-portion colour and applies it immediately.
+     *
+     * @param color `@ColorInt` colour for the played segment of the Media3 seek bar.
+     */
+    fun setSeekBarPlayedColor(@ColorInt color: Int) { style = style.withSeekBarPlayedColor(color) }
+
+    /**
+     * Sets the seek bar scrubber thumb colour and applies it immediately.
+     *
+     * @param color `@ColorInt` colour for the draggable thumb on the Media3 seek bar.
+     */
+    fun setSeekBarScrubberColor(@ColorInt color: Int) { style = style.withSeekBarScrubberColor(color) }
+
+    /**
+     * Sets the seek bar buffered-portion colour and applies it immediately.
+     *
+     * @param color `@ColorInt` colour for the buffered segment of the Media3 seek bar.
+     */
+    fun setSeekBarBufferedColor(@ColorInt color: Int) { style = style.withSeekBarBufferedColor(color) }
+
+    /**
+     * Sets the system-message overlay text colour and applies it immediately.
+     *
+     * @param color `@ColorInt` text colour of the banner that displays server-sent messages.
+     */
+    fun setMessageTextColor(@ColorInt color: Int) { style = style.withMessageTextColor(color) }
+
+    /**
+     * Sets the system-message overlay background colour and applies it immediately.
+     *
+     * @param color `@ColorInt` background colour of the overlay banner. Default is `#CC000000`.
+     */
+    fun setMessageBackgroundColor(@ColorInt color: Int) { style = style.withMessageBackgroundColor(color) }
+
     // ── State ──────────────────────────────────────────────────────────────────
 
     private val _stateFlow = MutableStateFlow<PlayerState>(PlayerState.Idle)
@@ -184,24 +275,6 @@ class BoomstreamPlayerView @JvmOverloads constructor(
     private val _currentQuality = MutableStateFlow<VideoQuality>(VideoQuality.Auto)
     private var qualityForwardJobs: List<Job> = emptyList()
     private var _enableQualitySelector: Boolean = false
-
-    /** Overlay button shown when [AdvancedPlayerOptions.enableQualitySelector] is true and tracks are available. */
-    private val qualitySelectorView: TextView = TextView(context).also { tv ->
-        tv.visibility = View.GONE
-        tv.setTextColor(Color.WHITE)
-        tv.setBackgroundColor(Color.argb(0xCC, 0, 0, 0))
-        val padV = (6 * resources.displayMetrics.density).toInt()
-        val padH = (10 * resources.displayMetrics.density).toInt()
-        tv.setPadding(padH, padV, padH, padV)
-        val margin = (8 * resources.displayMetrics.density).toInt()
-        val lp = LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).also {
-            it.gravity = Gravity.TOP or Gravity.END
-            it.topMargin = margin
-            it.marginEnd = margin
-        }
-        tv.setOnClickListener { view -> showQualityPopup(view) }
-        addView(tv, lp)
-    }
 
     // ── Controller ─────────────────────────────────────────────────────────────
 
@@ -370,14 +443,17 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         eventForwardJob = scope.launch { player.events.collect { _events.emit(it) } }
         progressForwardJob = scope.launch { player.progressFlow.collect { _progressFlow.value = it } }
 
-        // Forward quality state and drive the optional overlay button.
+        // Forward quality state for the controller API.
         val qualityJob1 = scope.launch { player.availableQualities.collect { _availableQualities.value = it } }
         val qualityJob2 = scope.launch { player.currentQuality.collect { _currentQuality.value = it } }
         qualityForwardJobs = listOf(qualityJob1, qualityJob2)
-        scope.launch {
-            combine(player.availableQualities, player.currentQuality) { q, c -> q to c }
-                .collect { (qualities, current) -> applyQualitySelectorState(qualities, current) }
-        }
+
+        // Wire the settings button to our sheet now that the player is ready.
+        playerView.interceptSettingsButton(
+            playerProvider = { mediaPlayer },
+            styleProvider = { _style },
+            enableQualitySelectorProvider = { _enableQualitySelector },
+        )
 
         player.load(mediaCode, configClient)
     }
@@ -400,6 +476,38 @@ class BoomstreamPlayerView @JvmOverloads constructor(
     override fun onDestroy(owner: LifecycleOwner) { releaseInternal() }
 
     // ── Internal ───────────────────────────────────────────────────────────────
+
+    /** Applies all non-null fields in [s] to the local overlay views and the inner [PlayerView]. */
+    private fun applyStyle(s: BoomstreamPlayerStyle) {
+        s.loaderColor?.let { loadingView.indeterminateTintList = ColorStateList.valueOf(it) }
+        s.messageTextColor?.let { messageView.setTextColor(it) }
+            ?: run { messageView.setTextColor(Color.WHITE) }
+        s.messageBackgroundColor?.let { messageView.setBackgroundColor(it) }
+            ?: run { messageView.setBackgroundColor(Color.argb(0xCC, 0, 0, 0)) }
+        applyStyleToPlayerView(playerView, s)
+    }
+
+    /** Reads colour XML attributes into a [BoomstreamPlayerStyle]; returns all-null defaults when [attrs] is null. */
+    private fun readStyleAttrs(context: Context, attrs: AttributeSet?): BoomstreamPlayerStyle {
+        attrs ?: return BoomstreamPlayerStyle()
+        val ta = context.obtainStyledAttributes(attrs, R.styleable.BoomstreamPlayerView)
+        return try {
+            BoomstreamPlayerStyle(
+                loaderColor = ta.getColorOrNull(R.styleable.BoomstreamPlayerView_boomstreamLoaderColor),
+                accentColor = ta.getColorOrNull(R.styleable.BoomstreamPlayerView_boomstreamAccentColor),
+                seekBarPlayedColor = ta.getColorOrNull(R.styleable.BoomstreamPlayerView_boomstreamSeekBarPlayedColor),
+                seekBarScrubberColor = ta.getColorOrNull(R.styleable.BoomstreamPlayerView_boomstreamSeekBarScrubberColor),
+                seekBarBufferedColor = ta.getColorOrNull(R.styleable.BoomstreamPlayerView_boomstreamSeekBarBufferedColor),
+                messageTextColor = ta.getColorOrNull(R.styleable.BoomstreamPlayerView_boomstreamMessageTextColor),
+                messageBackgroundColor = ta.getColorOrNull(R.styleable.BoomstreamPlayerView_boomstreamMessageBackgroundColor),
+            )
+        } finally {
+            ta.recycle()
+        }
+    }
+
+    private fun TypedArray.getColorOrNull(index: Int): Int? =
+        if (hasValue(index)) getColor(index, 0) else null
 
     /**
      * Inflates a fresh [PlayerView] with the requested surface backing and adds it as the
@@ -440,7 +548,6 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         _progressFlow.value = PlaybackProgress(0L, -1L, 0f)
         _availableQualities.value = emptyList()
         _currentQuality.value = VideoQuality.Auto
-        qualitySelectorView.visibility = View.GONE
     }
 
     private fun applyState(state: PlayerState) {
@@ -501,39 +608,6 @@ class BoomstreamPlayerView @JvmOverloads constructor(
                 messageView.visibility = View.GONE
             }
         }
-    }
-
-    private fun applyQualitySelectorState(qualities: List<VideoQuality>, current: VideoQuality) {
-        if (_enableQualitySelector && qualities.isNotEmpty()) {
-            qualitySelectorView.text = when (current) {
-                is VideoQuality.Auto -> "Auto"
-                is VideoQuality.Resolution -> current.label
-            }
-            qualitySelectorView.visibility = View.VISIBLE
-        } else {
-            qualitySelectorView.visibility = View.GONE
-        }
-    }
-
-    private fun showQualityPopup(anchor: View) {
-        val qualities = _availableQualities.value
-        if (qualities.isEmpty()) return
-        val menu = PopupMenu(context, anchor)
-        menu.menu.add(0, 0, 0, "Auto")
-        qualities.forEachIndexed { idx, q ->
-            if (q is VideoQuality.Resolution) {
-                menu.menu.add(0, idx + 1, idx + 1, q.label)
-            }
-        }
-        menu.setOnMenuItemClickListener { item ->
-            if (item.itemId == 0) {
-                controller.selectAuto()
-            } else {
-                qualities.getOrNull(item.itemId - 1)?.let { controller.selectQuality(it) }
-            }
-            true
-        }
-        menu.show()
     }
 
     // NOTE: we deliberately do NOT cancel [observerScope] in onDetachedFromWindow(). The scope's

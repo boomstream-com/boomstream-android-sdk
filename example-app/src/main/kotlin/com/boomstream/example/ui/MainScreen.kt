@@ -61,6 +61,7 @@ import com.boomstream.example.R
 import com.boomstream.sdk.api.Boomstream
 import com.boomstream.sdk.offline.DownloadState
 import com.boomstream.sdk.player.BoomstreamPlayer
+import com.boomstream.sdk.player.BoomstreamPlayerStyle
 
 @Composable
 fun MainScreen(vm: MainViewModel) {
@@ -99,6 +100,12 @@ fun MainScreen(vm: MainViewModel) {
                     // in ExampleApp.onCreate and carried automatically by Boomstream.configClient.
                     offlineCache = vm.offlineCache,
                     locale = locale,
+                    style = BoomstreamPlayerStyle(
+                        loaderColor = android.graphics.Color.parseColor("#662BFF"),
+                        accentColor = android.graphics.Color.parseColor("#662BFF"),
+                        seekBarPlayedColor = android.graphics.Color.parseColor("#662BFF"),
+                        seekBarScrubberColor = android.graphics.Color.parseColor("#662BFF"),
+                    ),
                     onFullscreenToggle = {
                         val activity = context as? Activity
                         activity?.requestedOrientation = if (playerIsLandscape) {

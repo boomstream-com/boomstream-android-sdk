@@ -87,6 +87,15 @@ class ConstraintOneReflectionTest {
         assertNoExoPlayerExposure(VideoQuality.Resolution::class.java)
     }
 
+    /**
+     * [BoomstreamPlayerStyle] is the media3-free styling model exposed by the player-sdk public API.
+     * All colour fields use standard [Int] (`@ColorInt`) — no [androidx.media3.*] types may appear.
+     */
+    @Test
+    fun `BoomstreamPlayerStyle exposes no ExoPlayer in public API — CSO constraint 1`() {
+        assertNoExoPlayerExposure(BoomstreamPlayerStyle::class.java)
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun assertNoExoPlayerExposure(cls: Class<*>) {
