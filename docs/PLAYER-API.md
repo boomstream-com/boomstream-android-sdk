@@ -3,6 +3,7 @@
 Full reference for programmatic player observation and control in `player-sdk` v1.2.0+.
 Video quality selection was added in v1.5.0 (see [Video quality selection](#video-quality-selection)).
 Player styling / theming was added in v1.6.0 (see [Styling / theming](#styling--theming)).
+Google Cast support (v1) was added in v1.7.0 (see [Google Cast](#google-cast)).
 
 - [Controller](#controller)
   - [Compose path](#compose-path)
@@ -18,6 +19,7 @@ Player styling / theming was added in v1.6.0 (see [Styling / theming](#styling--
 - [Surface type (SurfaceView vs TextureView)](#surface-type-surfaceview-vs-textureview)
 - [Video quality selection](#video-quality-selection)
 - [Styling / theming](#styling--theming)
+- [Google Cast](#google-cast)
 - [Backward compatibility](#backward-compatibility)
 
 ---
@@ -540,6 +542,172 @@ Style changes apply immediately — no reload required. The style survives `surf
 | `boomstreamSeekBarBufferedColor` | Seek bar buffered portion | Media3 `DefaultTimeBar.setBufferedColor` |
 | `boomstreamMessageTextColor` | Overlay banner text | Full control |
 | `boomstreamMessageBackgroundColor` | Overlay banner background | Full control; default `#CC000000` |
+
+---
+
+## Google Cast
+
+> **v1 limitation — unprotected content only.** Cast v1 uses the default Chromecast receiver
+> (`CC1AD845`) which streams HLS without DRM. Projects with download-protection disabled work
+> out of the box. DRM-protected playback on Cast requires a custom receiver and is planned for
+> a future release.
+
+### 0. Declare and request nearby-device permissions (Android 13+)
+
+> **Required on Android 13+ (API 33+).** Google Cast uses mDNS (`_googlecast._tcp.local`)
+> to discover devices on the local network. On API 33+, this requires the
+> `NEARBY_WIFI_DEVICES` runtime permission. Without it the Cast picker shows
+> **"No devices found"** even when a Chromecast is on the same Wi-Fi network.
+
+The Boomstream Player SDK declares both permissions in its AAR merged manifest, so they
+are automatically merged into your app. If you target a `minSdk` below 33 and want to
+be explicit, add them to your own `AndroidManifest.xml` as well:
+
+```xml
+<!-- Required for Cast mDNS discovery on Android 13+ (API 33+). -->
+<uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+    android:usesPermissionFlags="neverForLocation" />
+<!-- Required by the Cast framework for network state checks. -->
+<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+```
+
+`android:usesPermissionFlags="neverForLocation"` tells the system that your app does
+not infer physical location from Wi-Fi scan results, which avoids the full
+location-permission rationale dialog on supported devices.
+
+**You must also request `NEARBY_WIFI_DEVICES` at runtime on API 33+.** The manifest
+declaration alone is not sufficient — `NEARBY_WIFI_DEVICES` is a dangerous permission
+and requires an explicit runtime grant. Request it before the user opens the Cast picker:
+
+```kotlin
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.core.content.ContextCompat
+
+// Inside the Composable that shows your Cast button:
+val context = LocalContext.current
+val permissionLauncher = rememberLauncherForActivityResult(
+    ActivityResultContracts.RequestPermission()
+) { granted ->
+    // Update UI / log if needed
+}
+
+LaunchedEffect(Unit) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(
+            context, Manifest.permission.NEARBY_WIFI_DEVICES
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        permissionLauncher.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+    }
+}
+```
+
+### 1. Register the options provider in your manifest
+
+Add the following `<meta-data>` inside the `<application>` block of your
+`AndroidManifest.xml`. This tells the Cast framework to use Boomstream's `CastOptions`
+(the default receiver app ID) and must be present for `CastContext` to initialise.
+
+```xml
+<meta-data
+    android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+    android:value="com.boomstream.sdk.player.BoomstreamCastOptionsProvider" />
+```
+
+### 2. Use an AppCompat activity and theme
+
+`MediaRouteButton` requires the host activity to extend `AppCompatActivity` and the
+window theme to inherit from an AppCompat variant:
+
+```xml
+<!-- res/values/themes.xml -->
+<style name="Theme.MyApp" parent="Theme.AppCompat.Light.NoActionBar">
+    …
+</style>
+```
+
+```kotlin
+class MainActivity : AppCompatActivity() { … }
+```
+
+If you already use `AppCompatActivity` (common in projects with fragments or Material
+Components), no change is needed.
+
+### 3. Add your own `MediaRouteButton`
+
+The SDK does **not** inject a Cast button — you own the UI. Place a `MediaRouteButton`
+wherever your design requires it.
+
+> **Required:** call `CastButtonFactory.setUpMediaRouteButton(context, button)` on every
+> `MediaRouteButton` you create. This wires the button to the Cast route selector. **Without
+> it the button's chooser uses an empty selector and shows "No devices available" even though
+> `CastContext` discovers nearby Chromecasts.** Initialising `CastContext` alone does **not**
+> configure the button.
+
+`CastButtonFactory` comes from `com.google.android.gms:play-services-cast-framework` — add
+that dependency to your app module (the SDK keeps it as `implementation` so no Cast types leak
+onto its public API).
+
+**Compose (via `AndroidView`):**
+
+```kotlin
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.mediarouter.app.MediaRouteButton
+import com.google.android.gms.cast.framework.CastButtonFactory
+
+AndroidView(
+    factory = { ctx ->
+        MediaRouteButton(ctx).also { button ->
+            CastButtonFactory.setUpMediaRouteButton(ctx.applicationContext, button)
+        }
+    },
+    modifier = Modifier.size(48.dp),
+)
+```
+
+**XML layout:**
+
+```xml
+<androidx.mediarouter.app.MediaRouteButton
+    android:id="@+id/castButton"
+    android:layout_width="48dp"
+    android:layout_height="48dp" />
+```
+
+```kotlin
+// In onCreate(), after setContentView:
+CastButtonFactory.setUpMediaRouteButton(applicationContext, findViewById(R.id.castButton))
+```
+
+### 4. Observe Cast state from the controller
+
+`BoomstreamPlayerController` exposes two `StateFlow` properties:
+
+| Property | Type | Description |
+|---|---|---|
+| `isCasting` | `StateFlow<Boolean>` | `true` while playback is routed to a Chromecast device |
+| `castDeviceName` | `StateFlow<String?>` | Friendly name of the connected device, or `null` when not casting |
+
+Both flows update synchronously — `castDeviceName` is non-null exactly when `isCasting` is
+`true`.
+
+```kotlin
+val isCasting by controller.isCasting.collectAsState()
+val deviceName by controller.castDeviceName.collectAsState()
+
+if (isCasting) {
+    Text("Casting to ${deviceName ?: "Chromecast"}")
+}
+```
+
+The player handles session handoff automatically: when a Cast session starts, local
+playback hands off to the receiver and resumes from the current position; when the
+session ends, playback returns to the device.
 
 ---
 

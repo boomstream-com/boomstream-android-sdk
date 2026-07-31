@@ -34,10 +34,12 @@ import com.boomstream.sdk.api.internal.InternalBoomstreamApi
 import com.boomstream.sdk.api.internal.UserAgentTokenProvider
 import com.boomstream.sdk.player.internal.BoomstreamComposableController
 import com.boomstream.sdk.player.internal.BoomstreamMediaPlayer
+import com.boomstream.sdk.player.internal.CastSessionManager
 import com.boomstream.sdk.player.internal.applyLiveControllerUi
 import com.boomstream.sdk.player.internal.applyStyleToPlayerView
 import com.boomstream.sdk.player.internal.inflatePlayerView
 import com.boomstream.sdk.player.internal.interceptSettingsButton
+import com.google.android.gms.cast.framework.CastContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -186,6 +188,25 @@ fun BoomstreamPlayer(
 
     val player = remember(context, offlineCache, locale) {
         BoomstreamMediaPlayer(context, effectiveToken, advancedOptions, offlineCache, locale)
+    }
+
+    // Initialise CastContext once (idempotent singleton) so Cast discovery/sessions work. The
+    // integrator still MUST wire their own MediaRouteButton with
+    // CastButtonFactory.setUpMediaRouteButton(context, button) — initialising CastContext does
+    // NOT configure the button (an unwired button shows "no devices"). If the host app has not
+    // registered BoomstreamCastOptionsProvider in its manifest, getSharedInstance throws and we
+    // degrade silently — Cast is simply unavailable for this session.
+    val castContext = remember(context) {
+        runCatching { CastContext.getSharedInstance(context) }.getOrNull()
+    }
+
+    // Attach a CastSessionManager whenever player or castContext change.
+    // The player takes ownership of the manager's lifecycle (releases in player.release()).
+    DisposableEffect(player, castContext) {
+        if (castContext != null) {
+            player.attachCast(CastSessionManager(castContext))
+        }
+        onDispose { }
     }
 
     // Track fullscreen state for toggling and event emission.

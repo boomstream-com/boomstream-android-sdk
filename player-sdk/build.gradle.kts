@@ -61,6 +61,10 @@ dependencies {
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.datasource.okhttp)
     implementation(libs.media3.ui)
+    // Cast support: media3-cast bridges CastPlayer ↔ ExoPlayer; cast-framework provides
+    // CastContext and the default receiver. Both are implementation() — no Cast types on public API.
+    implementation(libs.media3.cast)
+    implementation(libs.play.services.cast.framework)
 
     // Compose (version resolved via BOM)
     val composeBom = platform(libs.compose.bom)

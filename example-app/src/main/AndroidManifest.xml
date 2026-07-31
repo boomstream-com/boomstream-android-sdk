@@ -5,6 +5,12 @@
     <!-- Required for BoomstreamVideoDownloadService (foreground download service). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Google Cast device discovery on Android 13+ (API 33+) requires NEARBY_WIFI_DEVICES.
+         neverForLocation: app does not derive physical location from Wi-Fi scan results.
+         ACCESS_WIFI_STATE: needed by the Cast framework for network state checks. -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 
     <application
         android:name=".ExampleApp"
@@ -28,6 +34,13 @@
         </activity>
 
         <!-- BoomstreamVideoDownloadService is also registered via the offline-sdk AAR merged manifest. -->
+
+        <!-- Google Cast: registers the Boomstream Cast options provider so that CastContext
+             initialises and any MediaRouteButton in the app can discover Chromecast devices.
+             v1 supports unprotected content only (DRM). -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.boomstream.sdk.player.BoomstreamCastOptionsProvider" />
 
     </application>
 

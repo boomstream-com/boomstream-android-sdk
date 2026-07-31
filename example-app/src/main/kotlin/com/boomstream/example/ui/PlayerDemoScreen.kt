@@ -1,9 +1,15 @@
 package com.boomstream.example.ui
 
+import android.Manifest
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.os.Build
 import android.view.WindowManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -44,14 +51,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.mediarouter.app.MediaRouteButton
 import com.boomstream.example.MainViewModel
 import com.boomstream.sdk.api.Boomstream
 import com.boomstream.sdk.player.AdvancedPlayerOptions
 import com.boomstream.sdk.player.BoomstreamPlayer
 import com.boomstream.sdk.player.BoomstreamPlayerStyle
+import com.google.android.gms.cast.framework.CastButtonFactory
 import com.boomstream.sdk.player.BoomstreamSurfaceType
 import com.boomstream.sdk.player.PlayerEvent
 import com.boomstream.sdk.player.VideoQuality
@@ -66,6 +76,8 @@ fun PlayerDemoScreen(vm: MainViewModel) {
     val progress by controller.progressFlow.collectAsState()
     val availableQualities by controller.availableQualities.collectAsState()
     val currentQuality by controller.currentQuality.collectAsState()
+    val isCasting by controller.isCasting.collectAsState()
+    val castDeviceName by controller.castDeviceName.collectAsState()
 
     // Fullscreen tracking — synced from FullScreenChanged events
     var isFullScreen by remember { mutableStateOf(false) }
@@ -79,6 +91,22 @@ fun PlayerDemoScreen(vm: MainViewModel) {
     // The player is recreated on change via key(surfaceType).
     val surfaceType by vm.surfaceType.collectAsState()
     val locale by vm.locale.collectAsState()
+
+    // NEARBY_WIFI_DEVICES runtime permission (required for Cast mDNS discovery on Android 13+).
+    // Requested once on screen entry; if denied we show an inline hint near the Cast button.
+    var nearbyWifiDenied by remember { mutableStateOf(false) }
+    val nearbyWifiLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> nearbyWifiDenied = !granted }
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.NEARBY_WIFI_DEVICES
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            nearbyWifiLauncher.launch(Manifest.permission.NEARBY_WIFI_DEVICES)
+        }
+    }
 
     // 70% trigger: auto-resets when selectedCode changes (remember key)
     var triggered70 by remember(selectedCode) { mutableStateOf(false) }
@@ -190,6 +218,68 @@ fun PlayerDemoScreen(vm: MainViewModel) {
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+
+            // ── Google Cast (integrator-owned button demo) ───────────────────
+            // The integrator places their own MediaRouteButton — the SDK does not
+            // inject one. BoomstreamCastOptionsProvider must be declared in the
+            // app's AndroidManifest.xml (see manifest OPTIONS_PROVIDER_CLASS_NAME).
+            Text(
+                text = "Google Cast",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                // AndroidView wraps the classic View-based MediaRouteButton.
+                // Requires AppCompatActivity + AppCompat theme on the host activity.
+                AndroidView(
+                    factory = { ctx ->
+                        MediaRouteButton(ctx).also { button ->
+                            // REQUIRED: wire the button to the Cast route selector.
+                            // Initialising CastContext alone does NOT configure the button —
+                            // without this call the chooser uses an empty MediaRouteSelector
+                            // and shows "no devices" even when CastContext discovers them.
+                            runCatching {
+                                CastButtonFactory.setUpMediaRouteButton(
+                                    ctx.applicationContext,
+                                    button,
+                                )
+                            }
+                        }
+                    },
+                    modifier = Modifier.size(48.dp),
+                )
+                if (isCasting) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.small,
+                    ) {
+                        Text(
+                            text = "📺 Casting to ${castDeviceName ?: "Chromecast"}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        )
+                    }
+                } else {
+                    Text(
+                        text = "Tap the Cast button to send to Chromecast",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    )
+                }
+            }
+            if (nearbyWifiDenied) {
+                Text(
+                    text = "⚠ NEARBY_WIFI_DEVICES denied — Cast device discovery may not work on Android 13+. Grant via system settings.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
 
             // ── Surface type toggle (rotation-crash workaround) ──────────────
             Text(

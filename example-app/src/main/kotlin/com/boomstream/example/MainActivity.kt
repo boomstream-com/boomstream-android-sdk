@@ -2,8 +2,8 @@ package com.boomstream.example
 
 import android.content.res.Configuration
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Column
@@ -21,7 +21,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import com.boomstream.example.ui.MainScreen
 import com.boomstream.example.ui.PlayerDemoScreen
 
-class MainActivity : ComponentActivity() {
+// AppCompatActivity required so MediaRouteButton (Cast demo) picks up the correct theme attrs.
+class MainActivity : AppCompatActivity() {
 
     private val vm: MainViewModel by viewModels()
 

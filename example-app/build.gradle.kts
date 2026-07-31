@@ -102,6 +102,12 @@ dependencies {
     implementation(project(":offline-sdk"))
 
     implementation(libs.android.core)
+    implementation(libs.appcompat)
+    implementation(libs.mediarouter)
+    // Cast button wiring: CastButtonFactory.setUpMediaRouteButton. A real integrator that
+    // shows a MediaRouteButton needs the Cast framework on their own classpath (the SDK keeps
+    // it as implementation() so no Cast types leak onto the public API).
+    implementation(libs.play.services.cast.framework)
     implementation(libs.lifecycle.viewmodel.ktx)
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.runtime.compose)

@@ -33,9 +33,9 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.boomstream:player-sdk:1.6.0")
-    implementation("com.boomstream:api-sdk:1.6.0")
-    implementation("com.boomstream:offline-sdk:1.6.0") // опционально — только если нужны offline-загрузки
+    implementation("com.boomstream:player-sdk:1.7.0")
+    implementation("com.boomstream:api-sdk:1.7.0")
+    implementation("com.boomstream:offline-sdk:1.7.0") // опционально — только если нужны offline-загрузки
 }
 ```
 
@@ -103,7 +103,7 @@ example-app ──► player-sdk, offline-sdk, api-sdk
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.6.0")
+implementation("com.boomstream:player-sdk:1.7.0")
 ```
 
 ### Jetpack Compose
@@ -314,6 +314,77 @@ BoomstreamPlayer(
 
 Плеер автоматически отдаёт загруженные сегменты из локального хранилища, fallback на сеть — для ещё не скачанных.
 
+### Google Cast (v1.7.0+)
+
+> **v1 — только незащищённый контент.** Проекты с включённой защитой от скачивания не поддерживают Cast в v1. DRM-защищённый Cast запланирован на следующий этап.
+
+**1. Объявите провайдер в манифесте:**
+
+```xml
+<!-- AndroidManifest.xml -->
+<application …>
+    <meta-data
+        android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+        android:value="com.boomstream.sdk.player.BoomstreamCastOptionsProvider" />
+</application>
+```
+
+**2. Требуется AppCompat-тема** (для корректного рендеринга `MediaRouteButton`):
+
+```xml
+<!-- res/values/themes.xml -->
+<style name="Theme.MyApp" parent="Theme.AppCompat.Light.NoActionBar"> … </style>
+```
+
+Активность должна наследоваться от `AppCompatActivity`.
+
+**3. Разместите свою кнопку Cast:**
+
+> **Обязательно:** для каждой `MediaRouteButton` вызовите
+> `CastButtonFactory.setUpMediaRouteButton(context, button)` — это привязывает кнопку к
+> Cast-селектору. **Без этого вызова диалог кнопки использует пустой селектор и показывает
+> «Нет доступных устройств», хотя `CastContext` находит Chromecast.** Одной инициализации
+> `CastContext` недостаточно. `CastButtonFactory` — из
+> `com.google.android.gms:play-services-cast-framework` (добавьте зависимость в свой модуль).
+
+```kotlin
+// Compose — через AndroidView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.mediarouter.app.MediaRouteButton
+import com.google.android.gms.cast.framework.CastButtonFactory
+
+AndroidView(
+    factory = { ctx ->
+        MediaRouteButton(ctx).also { button ->
+            CastButtonFactory.setUpMediaRouteButton(ctx.applicationContext, button)
+        }
+    },
+    modifier = Modifier.size(48.dp),
+)
+```
+
+```xml
+<!-- XML -->
+<androidx.mediarouter.app.MediaRouteButton
+    android:layout_width="48dp"
+    android:layout_height="48dp" />
+```
+```kotlin
+// В onCreate(), после setContentView:
+CastButtonFactory.setUpMediaRouteButton(applicationContext, findViewById(R.id.castButton))
+```
+
+**4. Следите за статусом каста через контроллер:**
+
+```kotlin
+val isCasting by controller.isCasting.collectAsState()
+val deviceName by controller.castDeviceName.collectAsState()
+
+if (isCasting) Text("📺 Трансляция на ${deviceName ?: "Chromecast"}")
+```
+
+Подробная документация — [docs/PLAYER-API.md → Google Cast](docs/PLAYER-API.md#google-cast).
+
 ---
 
 ## Модуль `offline-sdk`
@@ -321,7 +392,7 @@ BoomstreamPlayer(
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:offline-sdk:1.6.0")
+implementation("com.boomstream:offline-sdk:1.7.0")
 ```
 
 ### Инициализация
@@ -371,7 +442,7 @@ offlineManager.getDownloadState("Il4lNOfL").collect { state ->
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:api-sdk:1.6.0")
+implementation("com.boomstream:api-sdk:1.7.0")
 ```
 
 ### Использование Boomstream API
@@ -569,9 +640,9 @@ dependencyResolutionManagement {
 **2. Add the dependencies** to `app/build.gradle.kts`:
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.6.0")
-implementation("com.boomstream:api-sdk:1.6.0")
-implementation("com.boomstream:offline-sdk:1.6.0") // optional
+implementation("com.boomstream:player-sdk:1.7.0")
+implementation("com.boomstream:api-sdk:1.7.0")
+implementation("com.boomstream:offline-sdk:1.7.0") // optional
 ```
 
 **3. Initialize** in `Application.onCreate()`:
@@ -696,6 +767,71 @@ player.setSeekBarPlayedColor(ContextCompat.getColor(this, R.color.brand_violet))
 ```
 
 Full field reference — [docs/PLAYER-API.md → Styling / theming](docs/PLAYER-API.md#styling--theming).
+
+### Google Cast (v1.7.0+)
+
+> **v1 limitation — unprotected content only.** Projects with download protection enabled cannot
+> cast in v1. DRM-protected Cast (custom receiver) is planned for a future release.
+
+**1. Declare the options provider in your manifest:**
+
+```xml
+<!-- AndroidManifest.xml -->
+<application …>
+    <meta-data
+        android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+        android:value="com.boomstream.sdk.player.BoomstreamCastOptionsProvider" />
+</application>
+```
+
+**2. Use an AppCompat activity and theme** (required by `MediaRouteButton`):
+
+```xml
+<!-- res/values/themes.xml -->
+<style name="Theme.MyApp" parent="Theme.AppCompat.Light.NoActionBar"> … </style>
+```
+
+Your activity must extend `AppCompatActivity`.
+
+**3. Place your own Cast button:**
+
+> **Required:** call `CastButtonFactory.setUpMediaRouteButton(context, button)` on every
+> `MediaRouteButton`. Without it the button's chooser uses an empty selector and shows
+> "No devices available" even though `CastContext` discovers nearby Chromecasts — initialising
+> `CastContext` alone does not configure the button. `CastButtonFactory` is from
+> `com.google.android.gms:play-services-cast-framework` (add it to your app module).
+
+```kotlin
+// Compose
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.mediarouter.app.MediaRouteButton
+import com.google.android.gms.cast.framework.CastButtonFactory
+
+AndroidView(
+    factory = { ctx ->
+        MediaRouteButton(ctx).also { CastButtonFactory.setUpMediaRouteButton(ctx.applicationContext, it) }
+    },
+    modifier = Modifier.size(48.dp),
+)
+```
+
+```xml
+<!-- XML layout -->
+<androidx.mediarouter.app.MediaRouteButton
+    android:layout_width="48dp"
+    android:layout_height="48dp" />
+```
+
+**4. Observe cast state:**
+
+```kotlin
+val isCasting by controller.isCasting.collectAsState()
+val deviceName by controller.castDeviceName.collectAsState()
+
+if (isCasting) Text("Casting to ${deviceName ?: "Chromecast"}")
+```
+
+Full setup guide — [docs/PLAYER-API.md → Google Cast](docs/PLAYER-API.md#google-cast).
 
 ### offline-sdk
 

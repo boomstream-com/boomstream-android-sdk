@@ -7,7 +7,36 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
-## [1.6.0] — 2026-07-24
+## [1.7.0] — 2026-07-31
+
+### Added
+
+- **Google Cast v1** (`player-sdk`) — stream unprotected Boomstream content to Chromecast devices.
+  - **`BoomstreamCastOptionsProvider`** — declare in `AndroidManifest.xml` via the
+    `OPTIONS_PROVIDER_CLASS_NAME` meta-data entry to activate Cast. Uses the default
+    Chromecast receiver (`CC1AD845`); no custom receiver required.
+  - **Integrator-owned button** — the SDK does not inject a cast button. Place any
+    `MediaRouteButton` (XML or `AndroidView` in Compose) in your own layout and wire it with
+    `CastButtonFactory.setUpMediaRouteButton(context, button)` (required — an unwired button
+    shows "no devices"). Needs `com.google.android.gms:play-services-cast-framework` in your
+    app module.
+  - **`BoomstreamPlayerController.isCasting: StateFlow<Boolean>`** — `true` while playback is
+    routed to a Chromecast device.
+  - **`BoomstreamPlayerController.castDeviceName: StateFlow<String?>`** — friendly name of the
+    connected Chromecast, `null` when not casting.
+  - Session handoff is automatic: Cast session start hands off from local playback with
+    position continuity; session end returns to device.
+  - The default Chromecast receiver plays a single rendition (the highest-quality variant is
+    resolved from the master playlist and cast); adaptive bitrate on the TV via a custom
+    receiver is planned for a future release.
+  - **v1 limitation:** only unprotected content is supported. Projects with
+    download-protection enabled will not cast; DRM-protected Cast (custom receiver) is planned
+    for a future release.
+  - See [docs/PLAYER-API.md → Google Cast](docs/PLAYER-API.md#google-cast) for setup steps.
+
+---
+
+## [1.6.0] — Unreleased
 
 ### Changed
 

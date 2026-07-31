@@ -105,4 +105,29 @@ interface BoomstreamPlayerController {
      * No-op if the player is not yet loaded.
      */
     fun selectAuto()
+
+    // ── Cast API (v1 — unprotected content) ─────────────────────────
+
+    /**
+     * `true` while the player is actively casting to a Chromecast device via the default receiver.
+     *
+     * Integrators can collect this flow to show/hide their own cast UI or to adjust
+     * in-app playback controls:
+     * ```kotlin
+     * val isCasting by controller.isCasting.collectAsState()
+     * if (isCasting) CastOverlay(deviceName = controller.castDeviceName.value)
+     * ```
+     *
+     * **Media3-free** — no `CastPlayer` or Cast SDK types appear here (CSO constraint #1).
+     * Becomes `true` only for unprotected content; DRM-protected streams stay on ExoPlayer (v1).
+     */
+    val isCasting: StateFlow<Boolean>
+
+    /**
+     * Friendly name of the currently connected Chromecast device (e.g. `"Living Room TV"`),
+     * or `null` when [isCasting] is `false`.
+     *
+     * Updated synchronously with [isCasting].
+     */
+    val castDeviceName: StateFlow<String?>
 }

@@ -96,6 +96,25 @@ class ConstraintOneReflectionTest {
         assertNoExoPlayerExposure(BoomstreamPlayerStyle::class.java)
     }
 
+    // ── Cast (BOO-835): CastPlayer must not leak to public API ───────────────
+
+    /**
+     * [BoomstreamPlayerView] public surface must not expose [androidx.media3.cast.CastPlayer].
+     * The Cast controller integration is internal-only (CSO constraint #1 scope extended to Cast).
+     */
+    @Test
+    fun `BoomstreamPlayerView exposes no CastPlayer in public API — CSO constraint 1`() {
+        assertNoCastPlayerExposure(BoomstreamPlayerView::class.java)
+    }
+
+    /**
+     * [BoomstreamPlayerController] interface must not expose [androidx.media3.cast.CastPlayer].
+     */
+    @Test
+    fun `BoomstreamPlayerController exposes no CastPlayer in public API — CSO constraint 1`() {
+        assertNoCastPlayerExposure(BoomstreamPlayerController::class.java)
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private fun assertNoExoPlayerExposure(cls: Class<*>) {
@@ -128,6 +147,36 @@ class ConstraintOneReflectionTest {
             "CSO constraint #1 (BOO-596 §1): '${cls.simpleName}' must not expose ExoPlayer " +
                 "on its public API surface. Violations found: $violations. " +
                 "Use AdvancedPlayerOptions for permissible tuning instead.",
+            violations.isEmpty(),
+        )
+    }
+
+    private fun assertNoCastPlayerExposure(cls: Class<*>) {
+        val castPlayerClass = try {
+            Class.forName("androidx.media3.cast.CastPlayer")
+        } catch (_: ClassNotFoundException) {
+            return  // library not on test classpath in this variant — skip
+        }
+
+        val violations = mutableListOf<String>()
+        for (method in cls.declaredMethods) {
+            if (Modifier.isPublic(method.modifiers) &&
+                castPlayerClass.isAssignableFrom(method.returnType)
+            ) {
+                violations += "${cls.simpleName}.${method.name}(): ${method.returnType.simpleName}"
+            }
+        }
+        for (field in cls.declaredFields) {
+            if (Modifier.isPublic(field.modifiers) &&
+                castPlayerClass.isAssignableFrom(field.type)
+            ) {
+                violations += "${cls.simpleName}.${field.name}: ${field.type.simpleName}"
+            }
+        }
+
+        assertTrue(
+            "CSO constraint #1 (BOO-835): '${cls.simpleName}' must not expose CastPlayer " +
+                "on its public API surface. Violations found: $violations.",
             violations.isEmpty(),
         )
     }

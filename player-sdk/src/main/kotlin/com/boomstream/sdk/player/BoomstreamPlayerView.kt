@@ -20,10 +20,12 @@ import com.boomstream.sdk.api.BoomstreamConfigClient
 import com.boomstream.sdk.api.internal.InternalBoomstreamApi
 import com.boomstream.sdk.api.internal.UserAgentTokenProvider
 import com.boomstream.sdk.player.internal.BoomstreamMediaPlayer
+import com.boomstream.sdk.player.internal.CastSessionManager
 import com.boomstream.sdk.player.internal.applyLiveControllerUi
 import com.boomstream.sdk.player.internal.applyStyleToPlayerView
 import com.boomstream.sdk.player.internal.inflatePlayerView
 import com.boomstream.sdk.player.internal.interceptSettingsButton
+import com.google.android.gms.cast.framework.CastContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -276,6 +278,12 @@ class BoomstreamPlayerView @JvmOverloads constructor(
     private var qualityForwardJobs: List<Job> = emptyList()
     private var _enableQualitySelector: Boolean = false
 
+    // ── Cast state ──────────────────────────────────────────────────
+
+    private val _isCasting = MutableStateFlow(false)
+    private val _castDeviceName = MutableStateFlow<String?>(null)
+    private var castForwardJobs: List<Job> = emptyList()
+
     // ── Controller ─────────────────────────────────────────────────────────────
 
     /**
@@ -290,6 +298,8 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         override val state: StateFlow<PlayerState> = _stateFlow
         override val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
         override val currentQuality: StateFlow<VideoQuality> = _currentQuality
+        override val isCasting: StateFlow<Boolean> = _isCasting
+        override val castDeviceName: StateFlow<String?> = _castDeviceName
 
         override fun getCurrentPosition(): Long = mediaPlayer?.getCurrentPosition() ?: 0L
         override fun getDuration(): Long = mediaPlayer?.getDuration() ?: -1L
@@ -428,6 +438,10 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         mediaPlayer = player
         playerView.player = player.exoPlayer
 
+        // Attach Cast support if the host app registered BoomstreamCastOptionsProvider.
+        runCatching { CastContext.getSharedInstance(context) }.getOrNull()
+            ?.let { player.attachCast(CastSessionManager(it)) }
+
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         observerScope = scope
 
@@ -447,6 +461,11 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         val qualityJob1 = scope.launch { player.availableQualities.collect { _availableQualities.value = it } }
         val qualityJob2 = scope.launch { player.currentQuality.collect { _currentQuality.value = it } }
         qualityForwardJobs = listOf(qualityJob1, qualityJob2)
+
+        // Forward cast state for the controller API.
+        val castJob1 = scope.launch { player.isCasting.collect { _isCasting.value = it } }
+        val castJob2 = scope.launch { player.castDeviceName.collect { _castDeviceName.value = it } }
+        castForwardJobs = listOf(castJob1, castJob2)
 
         // Wire the settings button to our sheet now that the player is ready.
         playerView.interceptSettingsButton(
@@ -539,6 +558,8 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         progressForwardJob?.cancel(); progressForwardJob = null
         qualityForwardJobs.forEach { it.cancel() }
         qualityForwardJobs = emptyList()
+        castForwardJobs.forEach { it.cancel() }
+        castForwardJobs = emptyList()
         observerScope?.cancel()
         observerScope = null
         mediaPlayer?.release()
@@ -548,6 +569,8 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         _progressFlow.value = PlaybackProgress(0L, -1L, 0f)
         _availableQualities.value = emptyList()
         _currentQuality.value = VideoQuality.Auto
+        _isCasting.value = false
+        _castDeviceName.value = null
     }
 
     private fun applyState(state: PlayerState) {

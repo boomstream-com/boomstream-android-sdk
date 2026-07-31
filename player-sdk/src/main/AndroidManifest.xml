@@ -2,4 +2,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Internet permission is required for HLS streaming and config endpoint. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Google Cast mDNS discovery on Android 13+ (API 33+) requires NEARBY_WIFI_DEVICES.
+         Declared here so the merged manifest covers it for all SDK integrators.
+         neverForLocation: SDK does not derive physical location from Wi-Fi scan results.
+         ACCESS_WIFI_STATE: needed by the Cast framework for network state checks.
+         Note: integrators must still request NEARBY_WIFI_DEVICES at runtime on API 33+. -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 </manifest>

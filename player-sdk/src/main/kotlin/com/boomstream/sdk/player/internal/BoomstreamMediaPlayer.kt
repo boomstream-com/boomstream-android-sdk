@@ -1,6 +1,7 @@
 package com.boomstream.sdk.player.internal
 
 import android.content.Context
+import android.net.Uri
 import androidx.annotation.OptIn
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
@@ -14,6 +15,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSourceUtil
+import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
@@ -66,6 +69,13 @@ import kotlinx.coroutines.withContext
  *
  * **Must be created and accessed on the main thread** (ExoPlayer requirement).
  */
+/** Media info required to load content onto the Cast receiver. */
+private data class CastMediaInfo(
+    val hlsUrl: String,
+    val title: String,
+    val posterUrl: String?,
+)
+
 @OptIn(UnstableApi::class)
 internal class BoomstreamMediaPlayer(
     context: Context,
@@ -76,6 +86,9 @@ internal class BoomstreamMediaPlayer(
      *  `null` falls back to the server-supplied `translate` field. */
     internal val locale: String? = null,
 ) : DefaultLifecycleObserver {
+
+    // v1: DRM-protected content (non-null token) is not cast to the default receiver.
+    private val isProtectedContent: Boolean = allowClearKeyDRMtoken != null
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var fetchJob: Job? = null
@@ -126,6 +139,20 @@ internal class BoomstreamMediaPlayer(
     internal val currentSubtitleTrack: StateFlow<SubtitleTrackInfo?> = _currentSubtitleTrack
 
     private var lastKnownTracks: Tracks? = null
+
+    // ── Cast ────────────────────────────────────────────────────────
+
+    private val _isCasting = MutableStateFlow(false)
+    internal val isCasting: StateFlow<Boolean> = _isCasting
+
+    private val _castDeviceName = MutableStateFlow<String?>(null)
+    internal val castDeviceName: StateFlow<String?> = _castDeviceName
+
+    private var castManager: CastSessionManager? = null
+    private val castForwardJobs = mutableListOf<Job>()
+
+    // Last resolved media info — set whenever an HLS URL is loaded into ExoPlayer.
+    private var castMediaInfo: CastMediaInfo? = null
 
     private var progressJob: Job? = null
     private var _isFullScreen = false
@@ -250,6 +277,7 @@ internal class BoomstreamMediaPlayer(
                                                         isPlaylist = false,
                                                         isLive = media.isLive,
                                                     )
+                                                    castMediaInfo = CastMediaInfo(hlsUrl, media.title, null)
                                                 } else {
                                                     _state.value = PlayerState.Error(
                                                         error.message ?: "Playback error"
@@ -392,6 +420,15 @@ internal class BoomstreamMediaPlayer(
                                         playlistSize = playableItems.size,
                                         isLive = items.firstOrNull()?.isLive ?: false,
                                     )
+                                    // Cast v1: cast the first playlist item; multi-item playlist
+                                    // cast is not supported in this release.
+                                    items.firstOrNull()?.links?.hlsUrl?.let { url ->
+                                        castMediaInfo = CastMediaInfo(
+                                            hlsUrl = url,
+                                            title = items.firstOrNull()?.title.orEmpty(),
+                                            posterUrl = null,
+                                        )
+                                    }
                                 } else {
                                     _state.value = PlayerState.PosterOnly(
                                         bestPosterUrl(config.effectivePosters)
@@ -436,6 +473,11 @@ internal class BoomstreamMediaPlayer(
                                         isPlaylist = false,
                                         isLive = media.isLive,
                                     )
+                                    castMediaInfo = CastMediaInfo(
+                                        hlsUrl = hlsUrl,
+                                        title = media.title,
+                                        posterUrl = bestPosterUrl(media.posters + config.effectivePosters),
+                                    )
                                 } else {
                                     val posterUrl = bestPosterUrl(
                                         media.posters + config.effectivePosters
@@ -468,7 +510,116 @@ internal class BoomstreamMediaPlayer(
         }
     }
 
-    /** Releases ExoPlayer and cancels pending coroutines. Safe to call multiple times. */
+    // ── Cast management ─────────────────────────────────────────────
+
+    /**
+     * Attaches a [CastSessionManager], taking ownership of its lifecycle.
+     *
+     * Called by [com.boomstream.sdk.player.BoomstreamPlayer] / [com.boomstream.sdk.player.BoomstreamPlayerView]
+     * after [CastContext][com.google.android.gms.cast.framework.CastContext] is initialised.
+     * The previous manager (if any) is released first.
+     */
+    internal fun attachCast(manager: CastSessionManager) {
+        castManager?.release()
+        castForwardJobs.forEach { it.cancel() }
+        castForwardJobs.clear()
+        castManager = manager
+        manager.onSessionAvailable = ::handleCastSessionAvailable
+        manager.onSessionUnavailable = ::handleCastSessionUnavailable
+        castForwardJobs += scope.launch { manager.isCasting.collect { _isCasting.value = it } }
+        castForwardJobs += scope.launch { manager.castDeviceName.collect { _castDeviceName.value = it } }
+    }
+
+    private fun handleCastSessionAvailable() {
+        if (isProtectedContent) return  // default receiver does not support DRM — stay on ExoPlayer
+        val info = castMediaInfo ?: return  // no media loaded yet
+        val positionMs = exoPlayer.currentPosition
+        exoPlayer.pause()
+        // The Google default Cast receiver cannot play Boomstream's multi-variant master
+        // playlist (it stalls on a black screen). Resolve a single-rendition media playlist and
+        // cast that. ABR-on-TV via a custom receiver is tracked as a separate follow-up.
+        scope.launch {
+            val castUrl = resolveSingleRenditionUrl(info.hlsUrl) ?: info.hlsUrl
+            castManager?.loadMedia(buildCastMediaItem(info, castUrl), positionMs)
+        }
+    }
+
+    private fun handleCastSessionUnavailable(castPositionMs: Long) {
+        // Resume ExoPlayer from the position the Cast receiver was at.
+        exoPlayer.seekTo(castPositionMs)
+        exoPlayer.play()
+    }
+
+    private fun buildCastMediaItem(info: CastMediaInfo, contentUrl: String): MediaItem =
+        MediaItem.Builder()
+            .setUri(contentUrl)
+            .setMimeType(MimeTypes.APPLICATION_M3U8)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(info.title)
+                    .apply { info.posterUrl?.let { setArtworkUri(Uri.parse(it)) } }
+                    .build()
+            )
+            .build()
+
+    /**
+     * Fetches the adaptive master playlist at [masterUrl] and returns the highest-bandwidth
+     * variant (single-rendition media) playlist URL.
+     *
+     * The Google default Cast receiver stalls on Boomstream's multi-variant master playlists, so
+     * a single rendition is cast instead (highest quality — the receiver output is a TV). Returns
+     * `null` if the URL is already a media playlist, on a network/parse failure, or if no variant
+     * is found; the caller then falls back to the original master URL.
+     *
+     * Uses [networkDataSourceFactory] so the request carries the SDK `User-Agent`.
+     */
+    private suspend fun resolveSingleRenditionUrl(masterUrl: String): String? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val text = readUrlAsText(masterUrl) ?: return@runCatching null
+                if (!text.contains("#EXT-X-STREAM-INF")) return@runCatching null // already a media playlist
+                val lines = text.lines()
+                var bestBandwidth = -1L
+                var bestUrl: String? = null
+                var i = 0
+                while (i < lines.size) {
+                    val line = lines[i].trim()
+                    if (line.startsWith("#EXT-X-STREAM-INF")) {
+                        val bandwidth =
+                            Regex("BANDWIDTH=(\\d+)").find(line)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+                        var j = i + 1
+                        while (j < lines.size && (lines[j].isBlank() || lines[j].trim().startsWith("#"))) j++
+                        if (j < lines.size) {
+                            if (bandwidth >= bestBandwidth) {
+                                bestBandwidth = bandwidth
+                                bestUrl = resolveVariantUrl(masterUrl, lines[j].trim())
+                            }
+                            i = j
+                        }
+                    }
+                    i++
+                }
+                bestUrl
+            }.getOrNull()
+        }
+
+    /** Reads [url] to a UTF-8 string via the UA-injecting media3 data source. */
+    private fun readUrlAsText(url: String): String? = runCatching {
+        val dataSource = networkDataSourceFactory.createDataSource()
+        try {
+            dataSource.open(DataSpec(Uri.parse(url)))
+            DataSourceUtil.readToEnd(dataSource).decodeToString()
+        } finally {
+            DataSourceUtil.closeQuietly(dataSource)
+        }
+    }.getOrNull()
+
+    /** Resolves a variant URI (absolute or relative) against the master playlist URL. */
+    private fun resolveVariantUrl(masterUrl: String, ref: String): String =
+        if (ref.startsWith("http://") || ref.startsWith("https://")) ref
+        else runCatching { java.net.URI(masterUrl).resolve(ref).toString() }.getOrDefault(ref)
+
+    /** Releases ExoPlayer, CastPlayer, and all pending coroutines. Safe to call multiple times. */
     fun release() {
         fetchJob?.cancel()
         cancelPoll()
@@ -486,6 +637,13 @@ internal class BoomstreamMediaPlayer(
         _currentSubtitleTrack.value = null
         lastKnownTracks = null
         _playbackSpeed.value = 1.0f
+        castForwardJobs.forEach { it.cancel() }
+        castForwardJobs.clear()
+        castManager?.release()
+        castManager = null
+        castMediaInfo = null
+        _isCasting.value = false
+        _castDeviceName.value = null
         exoPlayer.release()
         _state.value = PlayerState.Idle
         _progressFlow.value = PlaybackProgress(0L, -1L, 0f)
@@ -721,6 +879,7 @@ internal class BoomstreamMediaPlayer(
                         isPlaylist = false,
                         isLive = media.isLive,
                     )
+                    castMediaInfo = CastMediaInfo(hlsUrl, media.title, null)
                     break
                 }
                 // Still offline — loop continues with next delay.

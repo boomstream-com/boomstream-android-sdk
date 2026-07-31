@@ -31,12 +31,16 @@ internal class BoomstreamComposableController : BoomstreamPlayerController {
     private val _stateFlow = MutableStateFlow<PlayerState>(PlayerState.Idle)
     private val _availableQualities = MutableStateFlow<List<VideoQuality>>(emptyList())
     private val _currentQuality = MutableStateFlow<VideoQuality>(VideoQuality.Auto)
+    private val _isCasting = MutableStateFlow(false)
+    private val _castDeviceName = MutableStateFlow<String?>(null)
 
     override val events: SharedFlow<PlayerEvent> = _events
     override val progressFlow: StateFlow<PlaybackProgress> = _progressFlow
     override val state: StateFlow<PlayerState> = _stateFlow
     override val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
     override val currentQuality: StateFlow<VideoQuality> = _currentQuality
+    override val isCasting: StateFlow<Boolean> = _isCasting
+    override val castDeviceName: StateFlow<String?> = _castDeviceName
 
     private var delegate: BoomstreamMediaPlayer? = null
     private val forwardJobs = mutableListOf<Job>()
@@ -49,6 +53,8 @@ internal class BoomstreamComposableController : BoomstreamPlayerController {
         forwardJobs += scope.launch { player.stateFlow.collect { _stateFlow.value = it } }
         forwardJobs += scope.launch { player.availableQualities.collect { _availableQualities.value = it } }
         forwardJobs += scope.launch { player.currentQuality.collect { _currentQuality.value = it } }
+        forwardJobs += scope.launch { player.isCasting.collect { _isCasting.value = it } }
+        forwardJobs += scope.launch { player.castDeviceName.collect { _castDeviceName.value = it } }
     }
 
     internal fun detach() {
@@ -58,6 +64,8 @@ internal class BoomstreamComposableController : BoomstreamPlayerController {
         _progressFlow.value = PlaybackProgress(0L, -1L, 0f)
         _availableQualities.value = emptyList()
         _currentQuality.value = VideoQuality.Auto
+        _isCasting.value = false
+        _castDeviceName.value = null
     }
 
     override fun getCurrentPosition(): Long = delegate?.getCurrentPosition() ?: 0L
