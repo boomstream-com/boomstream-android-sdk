@@ -21,7 +21,7 @@ media3               = "1.4.1"
 # player-sdk: Chromecast; cast-framework 21.5.0 is stable GA from Google Maven
 castFramework        = "21.5.0"
 # offline-sdk additions
-securityCrypto       = "1.1.0-alpha06"
+securityCrypto       = "1.1.0"
 coil                 = "2.6.0"
 composeBom           = "2024.06.00"
 # composeCompiler removed — K2 compose plugin (kotlin-compose) version tracks kotlin version
