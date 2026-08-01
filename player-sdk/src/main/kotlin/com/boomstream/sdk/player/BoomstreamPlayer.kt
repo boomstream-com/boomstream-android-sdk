@@ -36,6 +36,7 @@ import com.boomstream.sdk.player.internal.BoomstreamComposableController
 import com.boomstream.sdk.player.internal.BoomstreamMediaPlayer
 import com.boomstream.sdk.player.internal.CastSessionManager
 import com.boomstream.sdk.player.internal.applyLiveControllerUi
+import com.boomstream.sdk.player.internal.BoomstreamMessages
 import com.boomstream.sdk.player.internal.applyStyleToPlayerView
 import com.boomstream.sdk.player.internal.inflatePlayerView
 import com.boomstream.sdk.player.internal.interceptSettingsButton
@@ -246,6 +247,8 @@ fun BoomstreamPlayer(
     }
 
     val state by player.stateFlow.collectAsState()
+    val isCasting by player.isCasting.collectAsState()
+    val castDeviceName by player.castDeviceName.collectAsState()
 
     // Propagate state changes to the caller.
     LaunchedEffect(state) { onState(state) }
@@ -264,7 +267,9 @@ fun BoomstreamPlayer(
                     AndroidView(
                         factory = { ctx ->
                             inflatePlayerView(ctx, surfaceType).apply {
-                                this.player = player.exoPlayer
+                                // Bind the active player: ExoPlayer locally, CastPlayer while casting
+                                // — so the native controls (seek bar, play/pause) drive the TV.
+                                this.player = player.activePlayer
                                 useController = true
                                 applyLiveControllerUi(s.isLive)
                                 setShowPreviousButton(s.navButtonsVisible())
@@ -290,9 +295,11 @@ fun BoomstreamPlayer(
                             }
                         },
                         update = { playerView ->
-                            // Re-attach after recomposition (e.g. theme change); player ref is stable.
-                            if (playerView.player != player.exoPlayer) {
-                                playerView.player = player.exoPlayer
+                            // Swap between ExoPlayer and CastPlayer as the cast session comes and
+                            // goes (recomposes because isCasting is read below), so the controls
+                            // follow the active player.
+                            if (playerView.player != player.activePlayer) {
+                                playerView.player = player.activePlayer
                             }
                             // Update timebar and nav-button visibility on every state update (covers playlist item transitions).
                             playerView.applyLiveControllerUi(s.isLive)
@@ -343,6 +350,26 @@ fun BoomstreamPlayer(
                         }
                     }
 
+                    // Casting indicator banner. While casting, the PlayerView is bound to the
+                    // CastPlayer: the local surface shows the poster/artwork (no local video) and
+                    // the controls target the TV. This banner just labels the cast target and does
+                    // not cover the controls.
+                    if (isCasting) {
+                        val castLabel = castDeviceName
+                            ?.let { "${BoomstreamMessages.resolve("casting_to", locale)} $it" }
+                            ?: BoomstreamMessages.resolve("casting", locale)
+                        Text(
+                            text = "📺 $castLabel",
+                            color = Color.White,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .fillMaxWidth()
+                                .background(Color(0xCC000000.toInt()))
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                        )
+                    }
                 }
             }
             is PlayerState.PosterOnly -> {

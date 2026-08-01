@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -77,6 +78,7 @@ fun PlayerDemoScreen(vm: MainViewModel) {
     val availableQualities by controller.availableQualities.collectAsState()
     val currentQuality by controller.currentQuality.collectAsState()
     val isCasting by controller.isCasting.collectAsState()
+    val isConnecting by controller.isConnecting.collectAsState()
     val castDeviceName by controller.castDeviceName.collectAsState()
 
     // Fullscreen tracking — synced from FullScreenChanged events
@@ -251,8 +253,8 @@ fun PlayerDemoScreen(vm: MainViewModel) {
                     },
                     modifier = Modifier.size(48.dp),
                 )
-                if (isCasting) {
-                    Surface(
+                when {
+                    isCasting -> Surface(
                         color = MaterialTheme.colorScheme.primaryContainer,
                         shape = MaterialTheme.shapes.small,
                     ) {
@@ -263,8 +265,22 @@ fun PlayerDemoScreen(vm: MainViewModel) {
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         )
                     }
-                } else {
-                    Text(
+                    // Connecting: a device was picked but the session hasn't connected yet.
+                    isConnecting -> Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                        Text(
+                            text = "Connecting…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    else -> Text(
                         text = "Tap the Cast button to send to Chromecast",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),

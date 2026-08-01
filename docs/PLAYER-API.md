@@ -686,28 +686,37 @@ CastButtonFactory.setUpMediaRouteButton(applicationContext, findViewById(R.id.ca
 
 ### 4. Observe Cast state from the controller
 
-`BoomstreamPlayerController` exposes two `StateFlow` properties:
+`BoomstreamPlayerController` exposes three `StateFlow` properties:
 
 | Property | Type | Description |
 |---|---|---|
 | `isCasting` | `StateFlow<Boolean>` | `true` while playback is routed to a Chromecast device |
+| `isConnecting` | `StateFlow<Boolean>` | `true` after a device is picked in the chooser but before the session connects — use it to show a "connecting…" spinner. Becomes `false` once connected (`isCasting` turns `true`) or if the attempt is cancelled |
 | `castDeviceName` | `StateFlow<String?>` | Friendly name of the connected device, or `null` when not casting |
 
-Both flows update synchronously — `castDeviceName` is non-null exactly when `isCasting` is
-`true`.
+`castDeviceName` is non-null exactly when `isCasting` is `true`.
 
 ```kotlin
 val isCasting by controller.isCasting.collectAsState()
+val isConnecting by controller.isConnecting.collectAsState()
 val deviceName by controller.castDeviceName.collectAsState()
 
-if (isCasting) {
-    Text("Casting to ${deviceName ?: "Chromecast"}")
+when {
+    isCasting -> Text("Casting to ${deviceName ?: "Chromecast"}")
+    isConnecting -> CircularProgressIndicator()   // connecting to the device
 }
 ```
 
 The player handles session handoff automatically: when a Cast session starts, local
 playback hands off to the receiver and resumes from the current position; when the
 session ends, playback returns to the device.
+
+**Controls target the TV while casting.** During a Cast session every playback control —
+whether the built-in `PlayerView` controls or the `BoomstreamPlayerController` methods
+(`play`/`pause`/`seekTo`/`setVolume`/…) — acts on the Chromecast, not the local player.
+The progress/position reported by the controller likewise reflects the receiver. The local
+surface is paused and shows the poster with a "Casting to &lt;device>" banner; playback
+returns to the phone at the receiver's position when casting stops.
 
 ---
 

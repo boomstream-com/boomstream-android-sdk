@@ -6,6 +6,8 @@ import androidx.media3.cast.SessionAvailabilityListener
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastState
+import com.google.android.gms.cast.framework.CastStateListener
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -24,11 +26,16 @@ import kotlinx.coroutines.flow.StateFlow
  */
 @OptIn(UnstableApi::class)
 internal class CastSessionManager(
-    castContext: CastContext,
+    private val castContext: CastContext,
 ) : SessionAvailabilityListener {
 
     private val _isCasting = MutableStateFlow(false)
     val isCasting: StateFlow<Boolean> = _isCasting
+
+    /** True while a Cast session is being established — a device was picked but is not yet
+     *  connected (CastState.CONNECTING). Lets the UI show a "connecting…" spinner. */
+    private val _isConnecting = MutableStateFlow(false)
+    val isConnecting: StateFlow<Boolean> = _isConnecting
 
     private val _castDeviceName = MutableStateFlow<String?>(null)
     val castDeviceName: StateFlow<String?> = _castDeviceName
@@ -46,9 +53,19 @@ internal class CastSessionManager(
         it.setSessionAvailabilityListener(this)
     }
 
+    // Tracks CONNECTING → drives the "connecting…" UI between device pick and session-available.
+    private val castStateListener = CastStateListener { state ->
+        _isConnecting.value = state == CastState.CONNECTING
+    }
+
+    init {
+        castContext.addCastStateListener(castStateListener)
+    }
+
     // ── SessionAvailabilityListener ──────────────────────────────────────────
 
     override fun onCastSessionAvailable() {
+        _isConnecting.value = false
         _isCasting.value = true
         _castDeviceName.value = gmsSessionManager.currentCastSession?.castDevice?.friendlyName
         onSessionAvailable?.invoke()
@@ -56,6 +73,7 @@ internal class CastSessionManager(
 
     override fun onCastSessionUnavailable() {
         val positionMs = castPlayer.currentPosition
+        _isConnecting.value = false
         _isCasting.value = false
         _castDeviceName.value = null
         onSessionUnavailable?.invoke(positionMs)
@@ -76,6 +94,7 @@ internal class CastSessionManager(
     }
 
     fun release() {
+        castContext.removeCastStateListener(castStateListener)
         castPlayer.setSessionAvailabilityListener(null)
         castPlayer.release()
     }

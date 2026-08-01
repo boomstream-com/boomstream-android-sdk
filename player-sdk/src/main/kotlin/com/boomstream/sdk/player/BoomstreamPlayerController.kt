@@ -124,6 +124,14 @@ interface BoomstreamPlayerController {
     val isCasting: StateFlow<Boolean>
 
     /**
+     * `true` while a Cast session is being established — a device was picked in the route chooser
+     * but the session has not connected yet. Use it to show a "connecting…" spinner between the
+     * device selection and [isCasting] flipping to `true`. Becomes `false` once connected (then
+     * [isCasting] is `true`) or if the connection is cancelled/fails.
+     */
+    val isConnecting: StateFlow<Boolean>
+
+    /**
      * Friendly name of the currently connected Chromecast device (e.g. `"Living Room TV"`),
      * or `null` when [isCasting] is `false`.
      *

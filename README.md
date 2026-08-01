@@ -33,9 +33,9 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.boomstream:player-sdk:1.7.0")
-    implementation("com.boomstream:api-sdk:1.7.0")
-    implementation("com.boomstream:offline-sdk:1.7.0") // опционально — только если нужны offline-загрузки
+    implementation("com.boomstream:player-sdk:1.8.0")
+    implementation("com.boomstream:api-sdk:1.8.0")
+    implementation("com.boomstream:offline-sdk:1.8.0") // опционально — только если нужны offline-загрузки
 }
 ```
 
@@ -103,7 +103,7 @@ example-app ──► player-sdk, offline-sdk, api-sdk
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.7.0")
+implementation("com.boomstream:player-sdk:1.8.0")
 ```
 
 ### Jetpack Compose
@@ -378,10 +378,16 @@ CastButtonFactory.setUpMediaRouteButton(applicationContext, findViewById(R.id.ca
 
 ```kotlin
 val isCasting by controller.isCasting.collectAsState()
+val isConnecting by controller.isConnecting.collectAsState()   // идёт подключение к устройству
 val deviceName by controller.castDeviceName.collectAsState()
 
-if (isCasting) Text("📺 Трансляция на ${deviceName ?: "Chromecast"}")
+when {
+    isCasting -> Text("📺 Трансляция на ${deviceName ?: "Chromecast"}")
+    isConnecting -> CircularProgressIndicator()   // спиннер «подключение…»
+}
 ```
+
+Во время каста все контролы (встроенные в `PlayerView` и методы контроллера — `play`/`pause`/`seekTo`/`setVolume`) управляют **телевизором**, а не локальным плеером; позиция/прогресс тоже берутся с ресивера. Локальный экран ставится на паузу и показывает постер с плашкой «Идёт трансляция на …».
 
 Подробная документация — [docs/PLAYER-API.md → Google Cast](docs/PLAYER-API.md#google-cast).
 
@@ -392,7 +398,7 @@ if (isCasting) Text("📺 Трансляция на ${deviceName ?: "Chromecast"
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:offline-sdk:1.7.0")
+implementation("com.boomstream:offline-sdk:1.8.0")
 ```
 
 ### Инициализация
@@ -442,7 +448,7 @@ offlineManager.getDownloadState("Il4lNOfL").collect { state ->
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:api-sdk:1.7.0")
+implementation("com.boomstream:api-sdk:1.8.0")
 ```
 
 ### Использование Boomstream API
@@ -640,9 +646,9 @@ dependencyResolutionManagement {
 **2. Add the dependencies** to `app/build.gradle.kts`:
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.7.0")
-implementation("com.boomstream:api-sdk:1.7.0")
-implementation("com.boomstream:offline-sdk:1.7.0") // optional
+implementation("com.boomstream:player-sdk:1.8.0")
+implementation("com.boomstream:api-sdk:1.8.0")
+implementation("com.boomstream:offline-sdk:1.8.0") // optional
 ```
 
 **3. Initialize** in `Application.onCreate()`:
@@ -826,10 +832,16 @@ AndroidView(
 
 ```kotlin
 val isCasting by controller.isCasting.collectAsState()
+val isConnecting by controller.isConnecting.collectAsState()   // connecting to the device
 val deviceName by controller.castDeviceName.collectAsState()
 
-if (isCasting) Text("Casting to ${deviceName ?: "Chromecast"}")
+when {
+    isCasting -> Text("Casting to ${deviceName ?: "Chromecast"}")
+    isConnecting -> CircularProgressIndicator()   // "connecting…" spinner
+}
 ```
+
+While casting, every control (the built-in `PlayerView` controls and the controller methods — `play`/`pause`/`seekTo`/`setVolume`) targets the **TV**, not the local player; reported position/progress come from the receiver too. The local surface is paused and shows the poster with a "Casting to …" banner.
 
 Full setup guide — [docs/PLAYER-API.md → Google Cast](docs/PLAYER-API.md#google-cast).
 

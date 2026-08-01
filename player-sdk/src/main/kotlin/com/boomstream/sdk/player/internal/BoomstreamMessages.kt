@@ -25,6 +25,8 @@ internal object BoomstreamMessages {
             "settings_quality_auto" to "Авто",
             "subtitles_title" to "Субтитры",
             "subtitles_off" to "Выкл.",
+            "casting" to "Идёт трансляция",
+            "casting_to" to "Идёт трансляция на",
         ),
         "en" to mapOf(
             "stream_offline" to "Stream is offline",
@@ -38,6 +40,8 @@ internal object BoomstreamMessages {
             "settings_quality_auto" to "Auto",
             "subtitles_title" to "Subtitles",
             "subtitles_off" to "Off",
+            "casting" to "Casting",
+            "casting_to" to "Casting to",
         ),
     )
 

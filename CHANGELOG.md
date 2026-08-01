@@ -7,6 +7,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [1.8.0] — 2026-08-01
+
+### Added
+
+- **Cast controls target the TV** (`player-sdk`) — during a Cast session all playback controls
+  (the built-in `PlayerView` controls and the `BoomstreamPlayerController` methods) and the
+  reported progress/position act on the Chromecast, not the paused local player. The local
+  surface is paused and shows the poster with a "Casting to &lt;device>" banner; playback returns
+  to the phone at the receiver's position when casting stops.
+- **`BoomstreamPlayerController.isConnecting: StateFlow<Boolean>`** — `true` between picking a
+  Cast device in the chooser and the session connecting, so integrators can show a "connecting…"
+  spinner. Turns `false` once connected (`isCasting` becomes `true`) or if the attempt is cancelled.
+
+---
+
 ## [1.7.0] — 2026-07-31
 
 ### Added

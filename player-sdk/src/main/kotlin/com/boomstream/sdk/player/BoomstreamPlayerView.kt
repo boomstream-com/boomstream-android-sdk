@@ -20,6 +20,7 @@ import com.boomstream.sdk.api.BoomstreamConfigClient
 import com.boomstream.sdk.api.internal.InternalBoomstreamApi
 import com.boomstream.sdk.api.internal.UserAgentTokenProvider
 import com.boomstream.sdk.player.internal.BoomstreamMediaPlayer
+import com.boomstream.sdk.player.internal.BoomstreamMessages
 import com.boomstream.sdk.player.internal.CastSessionManager
 import com.boomstream.sdk.player.internal.applyLiveControllerUi
 import com.boomstream.sdk.player.internal.applyStyleToPlayerView
@@ -193,6 +194,41 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         })
     }
 
+    // Casting indicator banner. While casting, the PlayerView is bound to the CastPlayer (local
+    // video replaced by the poster/artwork, controls target the TV); this top banner just labels
+    // the cast target without covering the controls. Toggled from the isCasting collector in [load].
+    private val castOverlayView: TextView = TextView(context).also { tv ->
+        tv.visibility = View.GONE
+        tv.setTextColor(Color.WHITE)
+        tv.setBackgroundColor(Color.argb(0xCC, 0, 0, 0))
+        tv.gravity = Gravity.CENTER
+        tv.textSize = 15f
+        val pad = (12 * resources.displayMetrics.density).toInt()
+        val padH = (16 * resources.displayMetrics.density).toInt()
+        tv.setPadding(padH, pad, padH, pad)
+        addView(tv, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).also {
+            it.gravity = Gravity.TOP
+        })
+    }
+
+    /** Shows/hides the casting scrim and refreshes its localised label. */
+    private fun updateCastOverlay(casting: Boolean) {
+        if (casting) {
+            val loc = mediaPlayer?.locale
+            val device = _castDeviceName.value
+            val label = if (device != null) {
+                "${BoomstreamMessages.resolve("casting_to", loc)} $device"
+            } else {
+                BoomstreamMessages.resolve("casting", loc)
+            }
+            castOverlayView.text = "📺 $label"
+            castOverlayView.visibility = View.VISIBLE
+            castOverlayView.bringToFront()
+        } else {
+            castOverlayView.visibility = View.GONE
+        }
+    }
+
     // Apply XML-derived style now that all child views are initialised.
     init { applyStyle(_style) }
 
@@ -281,6 +317,7 @@ class BoomstreamPlayerView @JvmOverloads constructor(
     // ── Cast state ──────────────────────────────────────────────────
 
     private val _isCasting = MutableStateFlow(false)
+    private val _isConnecting = MutableStateFlow(false)
     private val _castDeviceName = MutableStateFlow<String?>(null)
     private var castForwardJobs: List<Job> = emptyList()
 
@@ -299,6 +336,7 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         override val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
         override val currentQuality: StateFlow<VideoQuality> = _currentQuality
         override val isCasting: StateFlow<Boolean> = _isCasting
+        override val isConnecting: StateFlow<Boolean> = _isConnecting
         override val castDeviceName: StateFlow<String?> = _castDeviceName
 
         override fun getCurrentPosition(): Long = mediaPlayer?.getCurrentPosition() ?: 0L
@@ -436,7 +474,7 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         val effectiveToken = allowClearKeyDRMtoken ?: (configClient as UserAgentTokenProvider).userAgentToken
         val player = BoomstreamMediaPlayer(context, effectiveToken, advancedOptions, offlineCache, locale)
         mediaPlayer = player
-        playerView.player = player.exoPlayer
+        playerView.player = player.activePlayer
 
         // Attach Cast support if the host app registered BoomstreamCastOptionsProvider.
         runCatching { CastContext.getSharedInstance(context) }.getOrNull()
@@ -462,10 +500,23 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         val qualityJob2 = scope.launch { player.currentQuality.collect { _currentQuality.value = it } }
         qualityForwardJobs = listOf(qualityJob1, qualityJob2)
 
-        // Forward cast state for the controller API.
-        val castJob1 = scope.launch { player.isCasting.collect { _isCasting.value = it } }
-        val castJob2 = scope.launch { player.castDeviceName.collect { _castDeviceName.value = it } }
-        castForwardJobs = listOf(castJob1, castJob2)
+        // Forward cast state for the controller API, and drive the cast-mode UI: rebind the
+        // PlayerView to the active player (so its controls target the TV) and toggle the scrim.
+        val castJob1 = scope.launch {
+            player.isCasting.collect { casting ->
+                _isCasting.value = casting
+                playerView.player = player.activePlayer
+                updateCastOverlay(casting)
+            }
+        }
+        val castJob2 = scope.launch {
+            player.castDeviceName.collect {
+                _castDeviceName.value = it
+                if (player.isCasting.value) updateCastOverlay(true)
+            }
+        }
+        val castJob3 = scope.launch { player.isConnecting.collect { _isConnecting.value = it } }
+        castForwardJobs = listOf(castJob1, castJob2, castJob3)
 
         // Wire the settings button to our sheet now that the player is ready.
         playerView.interceptSettingsButton(

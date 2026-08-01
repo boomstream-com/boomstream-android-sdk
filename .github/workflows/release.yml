@@ -101,24 +101,40 @@ jobs:
           CENTRAL_TOKEN_USERNAME: ${{ secrets.CENTRAL_TOKEN_USERNAME }}
           CENTRAL_TOKEN_PASSWORD: ${{ secrets.CENTRAL_TOKEN_PASSWORD }}
         run: |
-          for i in $(seq 1 60); do
+          # ~50 min window: Central can sit in PUBLISHING for 20+ min on slow days
+          # (v1.7.0 reached PUBLISHED ~22 min after upload). A short window false-fails
+          # a deployment that is actually succeeding.
+          LAST=""
+          for i in $(seq 1 150); do
             # Central Portal status endpoint is POST (not GET) — a GET returns no
             # deploymentState and the poll never resolves.
             S=$(curl -s -X POST -u "${CENTRAL_TOKEN_USERNAME}:${CENTRAL_TOKEN_PASSWORD}" \
               "https://central.sonatype.com/api/v1/publisher/status?id=${DEPLOYMENT_ID}" \
               | python3 -c "import sys,json;print(json.load(sys.stdin).get('deploymentState',''))" 2>/dev/null || echo "")
-            echo "[$i/60] deploymentState=$S"
+            echo "[$i/150] deploymentState=$S"
+            [ -n "$S" ] && LAST="$S"
             case "$S" in
               PUBLISHED) echo "Published to Maven Central"; exit 0 ;;
               FAILED|FAILED_VALIDATION) echo "Central publication failed"; exit 1 ;;
-              *) sleep 10 ;;
+              *) sleep 20 ;;
             esac
           done
-          echo "Timed out waiting for PUBLISHED"; exit 1
+          # Timed out. VALIDATED/PUBLISHING are post-validation, committed states — the
+          # deployment will finish and artifacts propagate to Maven Central shortly. Do NOT
+          # fail the release (that also skips the GitHub Release step); only fail if the
+          # deployment never left an unknown/empty state.
+          case "$LAST" in
+            PUBLISHING|VALIDATED|PUBLISHED)
+              echo "::warning::Timed out with deploymentState=$LAST — deployment is committed; proceeding to GitHub Release. Verify artifacts on Maven Central."
+              exit 0 ;;
+            *)
+              echo "Timed out with deploymentState='$LAST' (never reached a committed state)"; exit 1 ;;
+          esac
 
-      # Only reached once the artifacts are live on Central. Turns the bare tag into a
-      # GitHub Release whose notes are the matching CHANGELOG.md section, so the Releases
-      # page shows what changed per version. Metadata only — does not touch Maven.
+      # Reached once the Central deployment is committed (PUBLISHED, or still PUBLISHING at
+      # the wait timeout). Turns the bare tag into a GitHub Release whose notes are the
+      # matching CHANGELOG.md section, so the Releases page shows what changed per version.
+      # Metadata only — does not touch Maven; artifacts finish propagating independently.
       - name: Publish GitHub Release with changelog notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

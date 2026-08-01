@@ -32,6 +32,7 @@ internal class BoomstreamComposableController : BoomstreamPlayerController {
     private val _availableQualities = MutableStateFlow<List<VideoQuality>>(emptyList())
     private val _currentQuality = MutableStateFlow<VideoQuality>(VideoQuality.Auto)
     private val _isCasting = MutableStateFlow(false)
+    private val _isConnecting = MutableStateFlow(false)
     private val _castDeviceName = MutableStateFlow<String?>(null)
 
     override val events: SharedFlow<PlayerEvent> = _events
@@ -40,6 +41,7 @@ internal class BoomstreamComposableController : BoomstreamPlayerController {
     override val availableQualities: StateFlow<List<VideoQuality>> = _availableQualities
     override val currentQuality: StateFlow<VideoQuality> = _currentQuality
     override val isCasting: StateFlow<Boolean> = _isCasting
+    override val isConnecting: StateFlow<Boolean> = _isConnecting
     override val castDeviceName: StateFlow<String?> = _castDeviceName
 
     private var delegate: BoomstreamMediaPlayer? = null
@@ -54,6 +56,7 @@ internal class BoomstreamComposableController : BoomstreamPlayerController {
         forwardJobs += scope.launch { player.availableQualities.collect { _availableQualities.value = it } }
         forwardJobs += scope.launch { player.currentQuality.collect { _currentQuality.value = it } }
         forwardJobs += scope.launch { player.isCasting.collect { _isCasting.value = it } }
+        forwardJobs += scope.launch { player.isConnecting.collect { _isConnecting.value = it } }
         forwardJobs += scope.launch { player.castDeviceName.collect { _castDeviceName.value = it } }
     }
 

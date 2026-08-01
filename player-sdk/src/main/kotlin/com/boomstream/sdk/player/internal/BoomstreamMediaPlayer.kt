@@ -145,6 +145,9 @@ internal class BoomstreamMediaPlayer(
     private val _isCasting = MutableStateFlow(false)
     internal val isCasting: StateFlow<Boolean> = _isCasting
 
+    private val _isConnecting = MutableStateFlow(false)
+    internal val isConnecting: StateFlow<Boolean> = _isConnecting
+
     private val _castDeviceName = MutableStateFlow<String?>(null)
     internal val castDeviceName: StateFlow<String?> = _castDeviceName
 
@@ -153,6 +156,15 @@ internal class BoomstreamMediaPlayer(
 
     // Last resolved media info — set whenever an HLS URL is loaded into ExoPlayer.
     private var castMediaInfo: CastMediaInfo? = null
+
+    /**
+     * The player currently driving playback: the [CastPlayer] while a Cast session is active,
+     * otherwise the local [exoPlayer]. All user controls (play/pause/seek/volume/speed) and the
+     * progress readout route through this so that, while casting, they act on the TV — not the
+     * paused local player. Both are Media3 [Player]s, so the surface is uniform.
+     */
+    internal val activePlayer: Player
+        get() = if (_isCasting.value) (castManager?.castPlayer ?: exoPlayer) else exoPlayer
 
     private var progressJob: Job? = null
     private var _isFullScreen = false
@@ -527,6 +539,7 @@ internal class BoomstreamMediaPlayer(
         manager.onSessionAvailable = ::handleCastSessionAvailable
         manager.onSessionUnavailable = ::handleCastSessionUnavailable
         castForwardJobs += scope.launch { manager.isCasting.collect { _isCasting.value = it } }
+        castForwardJobs += scope.launch { manager.isConnecting.collect { _isConnecting.value = it } }
         castForwardJobs += scope.launch { manager.castDeviceName.collect { _castDeviceName.value = it } }
     }
 
@@ -542,6 +555,8 @@ internal class BoomstreamMediaPlayer(
             val castUrl = resolveSingleRenditionUrl(info.hlsUrl) ?: info.hlsUrl
             castManager?.loadMedia(buildCastMediaItem(info, castUrl), positionMs)
         }
+        // Keep the progress bar/state alive from the CastPlayer while casting.
+        startProgressPolling()
     }
 
     private fun handleCastSessionUnavailable(castPositionMs: Long) {
@@ -652,7 +667,9 @@ internal class BoomstreamMediaPlayer(
     // ── DefaultLifecycleObserver ──────────────────────────────────────────────
 
     override fun onStart(owner: LifecycleOwner) {
-        exoPlayer.play()
+        // Do not resume local playback while casting — the TV owns playback; the local surface
+        // stays paused behind the casting overlay.
+        if (!_isCasting.value) exoPlayer.play()
         if (isPollingMode) startConfigPolling()
     }
 
@@ -665,28 +682,29 @@ internal class BoomstreamMediaPlayer(
 
     // ── Public control methods ────────────────────────────────────────────────
 
-    internal fun getCurrentPosition(): Long = exoPlayer.currentPosition
+    // While casting, controls act on the CastPlayer (the TV); otherwise on ExoPlayer. See [activePlayer].
+    internal fun getCurrentPosition(): Long = activePlayer.currentPosition
 
-    internal fun getDuration(): Long = safeDuration(exoPlayer.duration)
+    internal fun getDuration(): Long = safeDuration(activePlayer.duration)
 
-    internal fun play() { exoPlayer.play() }
+    internal fun play() { activePlayer.play() }
 
-    internal fun pause() { exoPlayer.pause() }
+    internal fun pause() { activePlayer.pause() }
 
-    internal fun seekTo(positionMs: Long) { exoPlayer.seekTo(positionMs) }
+    internal fun seekTo(positionMs: Long) { activePlayer.seekTo(positionMs) }
 
     internal fun seekToPercent(percent: Float) {
-        val duration = exoPlayer.duration
+        val duration = activePlayer.duration
         if (duration == C.TIME_UNSET || duration <= 0L) {
             android.util.Log.w("BoomstreamPlayer", "seekToPercent: duration unknown, ignoring seek")
             return
         }
         val positionMs = (percent.coerceIn(0f, 1f) * duration).toLong()
-        exoPlayer.seekTo(positionMs)
+        activePlayer.seekTo(positionMs)
     }
 
     internal fun setVolume(percent: Int) {
-        exoPlayer.volume = percent.coerceIn(0, 100) / 100f
+        activePlayer.volume = percent.coerceIn(0, 100) / 100f
     }
 
     internal fun mute() { setVolume(0) }
@@ -694,11 +712,11 @@ internal class BoomstreamMediaPlayer(
     internal fun unmute() { setVolume(100) }
 
     internal fun next() {
-        if (exoPlayer.hasNextMediaItem()) exoPlayer.seekToNextMediaItem()
+        if (activePlayer.hasNextMediaItem()) activePlayer.seekToNextMediaItem()
     }
 
     internal fun previous() {
-        if (exoPlayer.hasPreviousMediaItem()) exoPlayer.seekToPreviousMediaItem()
+        if (activePlayer.hasPreviousMediaItem()) activePlayer.seekToPreviousMediaItem()
     }
 
     internal fun setFullScreen(isFullScreen: Boolean) {
@@ -733,10 +751,13 @@ internal class BoomstreamMediaPlayer(
 
     internal fun selectAuto() = selectQuality(VideoQuality.Auto)
 
-    /** Sets ExoPlayer playback speed. [speed] is clamped to [0.25, 2.0]. */
+    /** Sets playback speed on the active player (TV while casting). [speed] is clamped to [0.25, 2.0].
+     *  Ignored gracefully if the Cast receiver does not support variable speed. */
     internal fun setPlaybackSpeed(speed: Float) {
         val clamped = speed.coerceIn(0.25f, 2.0f)
-        exoPlayer.setPlaybackSpeed(clamped)
+        if (activePlayer.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)) {
+            activePlayer.setPlaybackSpeed(clamped)
+        }
         _playbackSpeed.value = clamped
     }
 
@@ -794,11 +815,12 @@ internal class BoomstreamMediaPlayer(
     private fun startProgressPolling() {
         if (progressJob?.isActive == true) return
         progressJob = scope.launch {
+            // Reads from [activePlayer] so the progress bar tracks the TV while casting.
             progressPollLoop(
                 intervalMs = 300L,
-                isPlaying = { exoPlayer.isPlaying },
-                currentPositionMs = { exoPlayer.currentPosition },
-                durationMs = { safeDuration(exoPlayer.duration) },
+                isPlaying = { activePlayer.isPlaying },
+                currentPositionMs = { activePlayer.currentPosition },
+                durationMs = { safeDuration(activePlayer.duration) },
                 onProgress = { _progressFlow.value = it },
             )
         }
