@@ -90,6 +90,16 @@ internal class BoomstreamMediaPlayer(
     // v1: DRM-protected content (non-null token) is not cast to the default receiver.
     private val isProtectedContent: Boolean = allowClearKeyDRMtoken != null
 
+    private val _isEncrypted = MutableStateFlow(false)
+
+    /**
+     * `true` when the currently loaded media is encrypted, taken from the config `encrypt` flag
+     * (per-media, not merely whether a DRM token was configured). The view layer uses this to mark
+     * the video surface secure (block screen capture of the video frame). Reset to `false` on each
+     * [load]; set when the config response arrives.
+     */
+    internal val isEncrypted: StateFlow<Boolean> = _isEncrypted
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var fetchJob: Job? = null
 
@@ -358,6 +368,22 @@ internal class BoomstreamMediaPlayer(
         }
 
     /**
+     * `true` when the signed HLS [url] marks the media as encrypted. The URL embeds a
+     * `data:<base64-json>` segment carrying `is_encrypt`; the media server reads exactly this flag
+     * to decide whether to encrypt segments, so mirroring it is the authoritative client signal.
+     */
+    private fun hlsIndicatesEncryption(url: String?): Boolean {
+        url ?: return false
+        val marker = "/data:"
+        val start = url.indexOf(marker).takeIf { it >= 0 }?.plus(marker.length) ?: return false
+        val end = url.indexOf('/', start).takeIf { it >= 0 } ?: url.length
+        val decoded = runCatching {
+            String(android.util.Base64.decode(url.substring(start, end), android.util.Base64.DEFAULT))
+        }.getOrNull() ?: return false
+        return decoded.contains("\"is_encrypt\":\"yes\"")
+    }
+
+    /**
      * Fetches the Boomstream config for [mediaCode] and starts playback (or shows a poster for
      * unauthenticated access). Cancels any in-flight fetch from a previous [load] call.
      */
@@ -377,6 +403,8 @@ internal class BoomstreamMediaPlayer(
         _currentAudioTrack.value = null
         _availableSubtitleTracks.value = emptyList()
         _currentSubtitleTrack.value = null
+        // Reset until the config for the new media tells us whether it is encrypted.
+        _isEncrypted.value = false
         lastKnownTracks = null
         _playbackSpeed.value = 1.0f
         exoPlayer.setPlaybackSpeed(1.0f)
@@ -393,6 +421,13 @@ internal class BoomstreamMediaPlayer(
             withContext(Dispatchers.Main) {
                 result.fold(
                     onSuccess = { config ->
+                        // Per-media encryption drives the secure video surface (screen-capture block).
+                        // The top-level `encrypt` flag is unreliable (often absent); the authoritative
+                        // signal is `is_encrypt` inside the signed HLS link's `data:` blob — the same
+                        // flag the media server acts on.
+                        val hlsForEnc = config.mediaDataSingle?.links?.hlsUrl
+                            ?: config.mediaDataPlaylist?.firstOrNull()?.links?.hlsUrl
+                        _isEncrypted.value = config.encrypt || hlsIndicatesEncryption(hlsForEnc)
                         val accessRestricted = config.accessRestricted
                         if (accessRestricted != null) {
                             val msg = BoomstreamMessages.resolve(
@@ -650,6 +685,8 @@ internal class BoomstreamMediaPlayer(
         _currentAudioTrack.value = null
         _availableSubtitleTracks.value = emptyList()
         _currentSubtitleTrack.value = null
+        // Reset until the config for the new media tells us whether it is encrypted.
+        _isEncrypted.value = false
         lastKnownTracks = null
         _playbackSpeed.value = 1.0f
         castForwardJobs.forEach { it.cancel() }

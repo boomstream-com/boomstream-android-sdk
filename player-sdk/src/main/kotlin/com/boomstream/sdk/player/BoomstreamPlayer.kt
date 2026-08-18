@@ -249,6 +249,10 @@ fun BoomstreamPlayer(
     val state by player.stateFlow.collectAsState()
     val isCasting by player.isCasting.collectAsState()
     val castDeviceName by player.castDeviceName.collectAsState()
+    // Per-media encryption flag (from config): drives the secure video surface. The Ready branch
+    // that hosts the PlayerView only composes after the config has loaded, so the factory reads the
+    // correct value when it inflates the surface.
+    val isEncrypted by player.isEncrypted.collectAsState()
 
     // Propagate state changes to the caller.
     LaunchedEffect(state) { onState(state) }
@@ -266,7 +270,7 @@ fun BoomstreamPlayer(
                 Box(modifier = Modifier.fillMaxSize()) {
                     AndroidView(
                         factory = { ctx ->
-                            inflatePlayerView(ctx, surfaceType).apply {
+                            inflatePlayerView(ctx, surfaceType, secure = isEncrypted).apply {
                                 // Bind the active player: ExoPlayer locally, CastPlayer while casting
                                 // — so the native controls (seek bar, play/pause) drive the TV.
                                 this.player = player.activePlayer
@@ -410,7 +414,7 @@ fun BoomstreamPlayer(
                 // Keep the last frame visible; host can react via onState to show replay UI.
                 AndroidView(
                     factory = { ctx ->
-                        inflatePlayerView(ctx, surfaceType).apply {
+                        inflatePlayerView(ctx, surfaceType, secure = isEncrypted).apply {
                             this.player = player.exoPlayer
                             useController = true
                             setShowPreviousButton(s.navButtonsVisible())

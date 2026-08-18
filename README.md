@@ -33,9 +33,9 @@ dependencyResolutionManagement {
 
 ```kotlin
 dependencies {
-    implementation("com.boomstream:player-sdk:1.8.0")
-    implementation("com.boomstream:api-sdk:1.8.0")
-    implementation("com.boomstream:offline-sdk:1.8.0") // опционально — только если нужны offline-загрузки
+    implementation("com.boomstream:player-sdk:1.9.0")
+    implementation("com.boomstream:api-sdk:1.9.0")
+    implementation("com.boomstream:offline-sdk:1.9.0") // опционально — только если нужны offline-загрузки
 }
 ```
 
@@ -103,7 +103,7 @@ example-app ──► player-sdk, offline-sdk, api-sdk
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.8.0")
+implementation("com.boomstream:player-sdk:1.9.0")
 ```
 
 ### Jetpack Compose
@@ -197,6 +197,15 @@ BoomstreamPlayer(
 ```
 
 `options.userAgent` в `BoomstreamOptions` помечен `@Deprecated` — перенесите токен в `userAgentToken` при ближайшем удобном случае. Параметр будет удалён в 2.0.
+
+#### Защита видео от захвата экрана
+
+Для **зашифрованного** медиа SDK автоматически помечает видео-поверхность secure (`SurfaceView.setSecure(true)`): скриншоты и запись экрана дают чёрный кадр **поверх видео**, при этом остальной UI вашего приложения остаётся снимаемым — как у системного плеера Android. Настраивать ничего не нужно.
+
+Ограничения:
+
+- Работает только с `BoomstreamSurfaceType.SURFACE_VIEW` (по умолчанию). `TextureView` защитить нельзя — при `TEXTURE_VIEW` для зашифрованного контента защита не применяется (в лог пишется предупреждение).
+- Это программная защита (скриншоты/запись/зеркалирование на не-secure дисплеи). Аппаратной гарантии с HDCP она не даёт — для этого нужен полноценный DRM (Widevine L1).
 
 ### Player events & controls
 
@@ -398,7 +407,7 @@ when {
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:offline-sdk:1.8.0")
+implementation("com.boomstream:offline-sdk:1.9.0")
 ```
 
 ### Инициализация
@@ -448,7 +457,7 @@ offlineManager.getDownloadState("Il4lNOfL").collect { state ->
 ### Подключение
 
 ```kotlin
-implementation("com.boomstream:api-sdk:1.8.0")
+implementation("com.boomstream:api-sdk:1.9.0")
 ```
 
 ### Использование Boomstream API
@@ -646,9 +655,9 @@ dependencyResolutionManagement {
 **2. Add the dependencies** to `app/build.gradle.kts`:
 
 ```kotlin
-implementation("com.boomstream:player-sdk:1.8.0")
-implementation("com.boomstream:api-sdk:1.8.0")
-implementation("com.boomstream:offline-sdk:1.8.0") // optional
+implementation("com.boomstream:player-sdk:1.9.0")
+implementation("com.boomstream:api-sdk:1.9.0")
+implementation("com.boomstream:offline-sdk:1.9.0") // optional
 ```
 
 **3. Initialize** in `Application.onCreate()`:
@@ -923,6 +932,15 @@ BoomstreamPlayer(
 ```
 
 `options.userAgent` in `BoomstreamOptions` is `@Deprecated` — move the token to `userAgentToken` when convenient. The field will be removed in 2.0.
+
+### Screen-capture protection
+
+For **encrypted** media the SDK automatically marks the video surface secure (`SurfaceView.setSecure(true)`): screenshots and screen recording render black **over the video frame**, while the rest of your app's UI stays capturable — the same behavior as the Android system video player. No configuration needed.
+
+Limitations:
+
+- Works only with `BoomstreamSurfaceType.SURFACE_VIEW` (the default). A `TextureView` cannot be secured — with `TEXTURE_VIEW`, encrypted content is not protected (a warning is logged).
+- This is a software block (screenshots / recording / mirroring to non-secure displays). It does not provide hardware-enforced HDCP protection — that requires full DRM (Widevine L1).
 
 ## Permissions
 

@@ -133,6 +133,11 @@ class BoomstreamPlayerView @JvmOverloads constructor(
     // here matters — keep _surfaceType above playerView.
     private var _surfaceType: BoomstreamSurfaceType = readSurfaceTypeAttr(context, attrs)
 
+    // Whether the video surface must be marked secure (encrypted content). Learned at [load] from
+    // the DRM token; declared before [playerView] so the initial inflation can read it. Starts
+    // false — the first PlayerView is inflated non-secure and recreated in [load] if needed.
+    private var _secureContent: Boolean = false
+
     /**
      * The view backing video rendering — [BoomstreamSurfaceType.SURFACE_VIEW] (default) or
      * [BoomstreamSurfaceType.TEXTURE_VIEW].
@@ -472,6 +477,7 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         // single-call init pattern don't have to repeat the token here.
         @OptIn(InternalBoomstreamApi::class)
         val effectiveToken = allowClearKeyDRMtoken ?: (configClient as UserAgentTokenProvider).userAgentToken
+
         val player = BoomstreamMediaPlayer(context, effectiveToken, advancedOptions, offlineCache, locale)
         mediaPlayer = player
         playerView.player = player.activePlayer
@@ -499,6 +505,11 @@ class BoomstreamPlayerView @JvmOverloads constructor(
         val qualityJob1 = scope.launch { player.availableQualities.collect { _availableQualities.value = it } }
         val qualityJob2 = scope.launch { player.currentQuality.collect { _currentQuality.value = it } }
         qualityForwardJobs = listOf(qualityJob1, qualityJob2)
+
+        // Encrypted media (from the config `encrypt` flag) → mark the video surface secure so screen
+        // capture of the video frame is blocked. The flag arrives asynchronously with the config, so
+        // react to it and recreate the PlayerView (setSecure must land before the surface is created).
+        scope.launch { player.isEncrypted.collect { applySecureSurface(it) } }
 
         // Forward cast state for the controller API, and drive the cast-mode UI: rebind the
         // PlayerView to the active player (so its controls target the TV) and toggle the scrim.
@@ -584,11 +595,36 @@ class BoomstreamPlayerView @JvmOverloads constructor(
      * bottom-most child (index 0) so the poster / loading / message overlays render above it.
      */
     private fun createPlayerView(type: BoomstreamSurfaceType): PlayerView =
-        inflatePlayerView(context, type).also { pv ->
+        inflatePlayerView(context, type, _secureContent).also { pv ->
             pv.useController = true
             pv.visibility = View.GONE
             addView(pv, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         }
+
+    /**
+     * Recreates the internal [PlayerView] with the [encrypted] secure flag so the video surface is
+     * (un)secured. `SurfaceView.setSecure` only takes effect before the surface is created, so a
+     * fresh, still-`GONE` PlayerView is inflated and the current player re-attached. No-op when the
+     * flag is unchanged.
+     */
+    private fun applySecureSurface(encrypted: Boolean) {
+        if (encrypted == _secureContent) return
+        _secureContent = encrypted
+        val previous = playerView
+        val attachedPlayer = previous.player
+        previous.player = null
+        removeView(previous)
+        val fresh = createPlayerView(_surfaceType)
+        fresh.player = attachedPlayer
+        playerView = fresh
+        applyState(_stateFlow.value)
+        applyStyleToPlayerView(fresh, _style)
+        fresh.interceptSettingsButton(
+            playerProvider = { mediaPlayer },
+            styleProvider = { _style },
+            enableQualitySelectorProvider = { _enableQualitySelector },
+        )
+    }
 
     /** Reads the `boomstreamSurfaceType` XML attribute; defaults to [BoomstreamSurfaceType.SURFACE_VIEW]. */
     private fun readSurfaceTypeAttr(context: Context, attrs: AttributeSet?): BoomstreamSurfaceType {

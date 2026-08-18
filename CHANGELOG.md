@@ -7,6 +7,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased]
+
+---
+
+## [1.9.0] — 2026-08-18
+
+### Added
+
+- **Screen-capture protection for encrypted content** (`player-sdk`) — when the loaded media is
+  encrypted (from the config `encrypt` flag, or the `is_encrypt` marker in the signed HLS link),
+  the SDK marks only the video `SurfaceView` secure (`setSecure(true)`), so screenshots and screen
+  recording show black over the video frame while the host app's own UI stays capturable.
+  `SurfaceView` only — a `TextureView` surface cannot be secured (a warning is logged). This is a
+  software block, independent of the encryption scheme; hardware-enforced protection still requires
+  Widevine L1.
+
+---
+
 ## [1.8.0] — 2026-08-01
 
 ### Added

@@ -282,8 +282,8 @@ On a small number of vendor codec HALs — observed on some **Android 16** devic
 is a hard `PROCESS ENDED` with **no Java stack trace** (the JVM never sees it; it's a native
 `SIGSEGV`), sometimes right after `onConfigurationChanged`. Switching to `TEXTURE_VIEW` renders into
 a `SurfaceTexture` that survives relayout without destroying/recreating the surface, sidestepping the
-hand-off entirely. Boomstream's Clear Key playback is non-secure, so the loss of secure-surface
-support does not apply.
+hand-off entirely. Trade-off: a `TextureView` cannot be marked secure, so for **encrypted** media the
+screen-capture protection (below) does not apply on `TEXTURE_VIEW` — a warning is logged in that case.
 
 ### How to set it
 
@@ -328,6 +328,23 @@ attribute on `BoomstreamPlayerView` needs no such care — it is re-read on ever
 > **Interim workaround without an SDK upgrade:** removing `orientation` from the host Activity's
 > `android:configChanges` lets Android recreate the Activity on rotation instead of driving a live
 > surface hand-off, which also avoids the crash. Prefer `TEXTURE_VIEW` for a seamless rotation.
+
+---
+
+## Screen-capture protection (encrypted media)
+
+_Available in `player-sdk` v1.9.0+._
+
+For **encrypted** media (detected from the config `encrypt` flag / the signed HLS link) the player
+automatically marks the video surface secure via `SurfaceView.setSecure(true)`. Screenshots and
+screen recording render black over the video frame, while the rest of the host UI stays capturable —
+the same behavior as the Android system video player. There is no API to toggle this; it follows the
+media's encryption state.
+
+- Applies only to `SURFACE_VIEW` (the default). `TEXTURE_VIEW` cannot be secured — encrypted content
+  on a `TextureView` is **not** capture-protected (a warning is logged).
+- Software-level protection (screenshots / recording / mirroring to non-secure displays). It does
+  **not** add HDCP or a hardware secure-decode path — those require full DRM (Widevine L1).
 
 ---
 
