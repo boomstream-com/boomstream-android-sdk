@@ -19,7 +19,7 @@ mediarouter          = "1.6.0-beta01"
 # player-sdk additions
 media3               = "1.4.1"
 # player-sdk: Chromecast; cast-framework 21.5.0 is stable GA from Google Maven
-castFramework        = "21.5.0"
+castFramework        = "22.3.1"
 # offline-sdk additions
 securityCrypto       = "1.1.0-alpha06"
 coil                 = "2.6.0"
